@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'sync/mini_app_manager.dart';
 
-class MiniAppPage extends StatelessWidget {
+class MiniAppPage extends StatefulWidget {
   final String appId;
   final String appPath;
   final String userId;
@@ -13,13 +14,44 @@ class MiniAppPage extends StatelessWidget {
   });
 
   @override
+  State<MiniAppPage> createState() => _MiniAppPageState();
+}
+
+class _MiniAppPageState extends State<MiniAppPage> {
+  bool _isSyncing = true;
+  bool _syncError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncMiniApp();
+  }
+
+  Future<void> _syncMiniApp() async {
+    final result = await MiniAppManager.syncMiniApp(widget.appId, widget.appPath);
+    if (mounted) {
+      setState(() {
+        _isSyncing = false;
+        _syncError = !result;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7F7),
       appBar: const MiniAppCapsuleAppBar(),
       body: SafeArea(
         top: false, // AppBar already handles top safe area usually
-        child: Stack(children: [const MiniAppSplashScreen(appName: '小程序示例')]),
+        child: Stack(children: [
+          if (_syncError)
+            const Center(child: Text('小程序加载失败', style: TextStyle(color: Colors.red)))
+          else if (_isSyncing)
+            const MiniAppSplashScreen(appName: '小程序示例')
+          else
+            const Center(child: Text('应该显示小程序WebView内容')), // 这里后续将替换为真正的 WebView 内容
+        ]),
       ),
     );
   }
@@ -38,7 +70,8 @@ class MiniAppSplashScreen extends StatelessWidget {
       height: double.infinity,
       child: Column(
         children: [
-          const Spacer(flex: 1), // Reduced top whitespace (moving content UP)
+          const Spacer(flex: 1),
+          // Reduced top whitespace (moving content UP)
           Stack(
             alignment: Alignment.center,
             children: [
@@ -80,7 +113,8 @@ class MiniAppSplashScreen extends StatelessWidget {
               color: Colors.black87,
             ),
           ),
-          const Spacer(flex: 2), // Bottom white space (significantly more than top)
+          const Spacer(flex: 2),
+          // Bottom white space (significantly more than top)
         ],
       ),
     );
