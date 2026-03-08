@@ -31,22 +31,24 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(title: const Text('Plugin example app')),
-        body: Center(
-          child: GestureDetector(
-            onTap: () {
-              final String userId = "123"; // 标识宿主App业务用户id
-              final String appId = "demoapp"; // 小程序的id
-              final String appPath = ""; // 小程序的本地存储路径
-              MiniAppPlugin.launchApp(
-                context: context,
-                userId: userId,
-                appId: appId,
-                appPath: appPath,
-              );
-            },
-            child: const Text('Open Mini App'),
+      home: Builder(
+        builder: (context) => Scaffold(
+          appBar: AppBar(title: const Text('Plugin example app')),
+          body: Center(
+            child: GestureDetector(
+              onTap: () {
+                final String userId = "123"; // 标识宿主App业务用户id
+                final String appId = "demoapp"; // 小程序的id
+                final String appPath = ""; // 小程序的本地存储路径
+                MiniAppPlugin.launchApp(
+                  context: context,
+                  userId: userId,
+                  appId: appId,
+                  appPath: appPath,
+                );
+              },
+              child: const Text('Open Mini App'),
+            ),
           ),
         ),
       ),
