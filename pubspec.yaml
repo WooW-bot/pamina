@@ -17,6 +17,9 @@ dependencies:
   archive: ^3.6.1
   path_provider: ^2.1.5
   path: ^1.9.0
+  webview_flutter: ^4.10.0
+  webview_flutter_android: ^4.10.1
+  webview_flutter_wkwebview: ^3.15.0
 
 dev_dependencies:
   flutter_test:
@@ -56,8 +59,8 @@ flutter:
         fileName: mini_app_flutter_web.dart
 
   # To add assets to your plugin package, add an assets section, like this:
-  # assets:
-  #   - assets/
+  assets:
+    - assets/
   #
   # For details regarding assets in packages, see
   # https://flutter.dev/to/asset-from-package

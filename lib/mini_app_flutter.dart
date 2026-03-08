@@ -1,9 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:mini_app_flutter/src/sync/mini_app_manager.dart';
 import 'src/mini_app_page.dart';
+import 'src/utils/mini_app_log.dart';
 
 export 'src/mini_app_page.dart';
 
+/// 小程序插件入口类
+///
+/// @author Parker
 class MiniAppPlugin {
+  static Future<bool> initFramework() async {
+    try {
+      return await MiniAppManager.initFramework();
+    } catch (e) {
+      MiniAppLog.e(
+        'initFramework error (caught at plugin layer)',
+        error: e,
+        tag: 'Plugin',
+      );
+      return false;
+    }
+  }
+
   static Future<T?> launchApp<T>({
     required BuildContext context,
     required String userId,

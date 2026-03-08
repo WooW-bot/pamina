@@ -4,7 +4,10 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:mini_app_flutter/mini_app_flutter.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // 提前初始化框架引擎，实现秒开体验
+  await MiniAppPlugin.initFramework();
   runApp(const MyApp());
 }
 
@@ -32,25 +35,26 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Builder(
-        builder: (context) => Scaffold(
-          appBar: AppBar(title: const Text('Plugin example app')),
-          body: Center(
-            child: GestureDetector(
-              onTap: () {
-                final String userId = "123"; // 标识宿主App业务用户id
-                final String appId = "demoapp"; // 小程序的id
-                final String appPath = ""; // 小程序的本地存储路径
-                MiniAppPlugin.launchApp(
-                  context: context,
-                  userId: userId,
-                  appId: appId,
-                  appPath: appPath,
-                );
-              },
-              child: const Text('Open Mini App'),
+        builder:
+            (context) => Scaffold(
+              appBar: AppBar(title: const Text('Plugin example app')),
+              body: Center(
+                child: GestureDetector(
+                  onTap: () {
+                    final String userId = "123"; // 标识宿主App业务用户id
+                    final String appId = "demoapp"; // 小程序的id
+                    final String appPath = ""; // 小程序的本地存储路径
+                    MiniAppPlugin.launchApp(
+                      context: context,
+                      userId: userId,
+                      appId: appId,
+                      appPath: appPath,
+                    );
+                  },
+                  child: const Text('Open Mini App'),
+                ),
+              ),
             ),
-          ),
-        ),
       ),
     );
   }
