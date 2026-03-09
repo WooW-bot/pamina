@@ -1,4 +1,4 @@
-package com.mini.app.mini_app_flutter_example;
+package com.pamina.example;
 
 import io.flutter.embedding.android.FlutterActivity;
 

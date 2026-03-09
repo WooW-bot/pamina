@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 
-import 'package:flutter/services.dart';
-import 'package:mini_app_flutter/mini_app_flutter.dart';
+import 'package:pamina/pamina.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // 提前初始化框架引擎，实现秒开体验
-  await MiniAppPlugin.initFramework();
+  await Pamina.initFramework();
   runApp(const MyApp());
 }
 
@@ -19,9 +18,6 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  String _platformVersion = 'Unknown';
-  final _miniAppPlugin = MiniAppPlugin();
-
   @override
   void initState() {
     super.initState();
@@ -44,7 +40,7 @@ class _MyAppState extends State<MyApp> {
                     final String userId = "123"; // 标识宿主App业务用户id
                     final String appId = "demoapp"; // 小程序的id
                     final String appPath = ""; // 小程序的本地存储路径
-                    MiniAppPlugin.launchApp(
+                    Pamina.launchApp(
                       context: context,
                       userId: userId,
                       appId: appId,

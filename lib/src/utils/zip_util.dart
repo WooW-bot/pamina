@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 
-import 'mini_app_log.dart';
+import 'pamina_log.dart';
 
 /// 小程序 Zip 解压工具类
 ///
@@ -37,7 +37,7 @@ class ZipUtil {
       }
       return true;
     } catch (e) {
-      MiniAppLog.e('ZipUtil unzip error', error: e, tag: 'Zip');
+      PaminaLog.e('ZipUtil unzip error', error: e, tag: 'Zip');
       return false;
     }
   }

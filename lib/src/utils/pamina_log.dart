@@ -6,10 +6,10 @@ import 'package:flutter/foundation.dart';
 /// 样式参考了 Hera 的 HeraTrace/HRLog 实现。
 /// 
 /// @author Parker
-class MiniAppLog {
-  static const String _tag = "[MiniApp]";
+class PaminaLog {
+  static const String _tag = "[Pamina]";
 
-  MiniAppLog._();
+  PaminaLog._();
 
   /// 调试日志
   static void d(String message, {String? tag}) {

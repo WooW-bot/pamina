@@ -4,22 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:path/path.dart' as p;
-import 'utils/mini_app_log.dart';
+import 'utils/pamina_log.dart';
 
 
-/// 小程序逻辑层服务组件 (AppService)
+/// Pamina 逻辑层服务组件 (AppService)
 ///
 /// 该组件是一个不可见的 WebView，负责运行小程序的逻辑层 JS (service.js)。
 /// 它充当了小程序的消息中枢，协调视图层 (Page) 与 Native 之间的通信。
 ///
 /// @author Parker
-class MiniAppService extends StatefulWidget {
+class PaminaService extends StatefulWidget {
   final String appId;
   final String sourcePath;
   final Function(String event, String params, String? viewIds)? onPublish;
   final Function(String event, String params, String? callbackId)? onInvoke;
 
-  const MiniAppService({
+  const PaminaService({
     super.key,
     required this.appId,
     required this.sourcePath,
@@ -28,10 +28,10 @@ class MiniAppService extends StatefulWidget {
   });
 
   @override
-  State<MiniAppService> createState() => MiniAppServiceState();
+  State<PaminaService> createState() => PaminaServiceState();
 }
 
-class MiniAppServiceState extends State<MiniAppService> {
+class PaminaServiceState extends State<PaminaService> {
   late final WebViewController _controller;
 
   @override
@@ -51,9 +51,9 @@ class MiniAppServiceState extends State<MiniAppService> {
                 // 运行时注入或 HTML 注入
               },
               onPageFinished: (String url) {
-                MiniAppLog.i(
+                PaminaLog.i(
                   'Logic layer (service.html) loaded.',
-                  tag: 'Service',
+                  tag: 'PaminaService',
                 );
               },
             ),
@@ -98,7 +98,7 @@ class MiniAppServiceState extends State<MiniAppService> {
   void _handleInvokeMessage(String message) {
     try {
       // 记录原始消息以供调试
-      MiniAppLog.d('Service InvokeRaw: $message', tag: 'Service');
+      PaminaLog.d('Service InvokeRaw: $message', tag: 'PaminaService');
       final Map<String, dynamic> data = json.decode(message);
       
       // Hera 框架在 Invoke 时可能使用 'C' 作为 event key (Command)
@@ -106,20 +106,20 @@ class MiniAppServiceState extends State<MiniAppService> {
       final String params = data['paramsString'] ?? '{}';
       final String? callbackId = data['callbackId']?.toString();
 
-      MiniAppLog.d('Invoke: event=$event, callbackId=$callbackId', tag: 'Service');
+      PaminaLog.d('Invoke: event=$event, callbackId=$callbackId', tag: 'PaminaService');
 
       if (widget.onInvoke != null) {
         widget.onInvoke!(event, params, callbackId);
       }
     } catch (e) {
-      MiniAppLog.e('Handle invoke message error', error: e, tag: 'Service');
+      PaminaLog.e('Handle invoke message error', error: e, tag: 'PaminaService');
     }
   }
 
   void _handlePublishMessage(String message) {
     try {
       // 记录原始消息以供调试
-      MiniAppLog.d('Service PublishRaw: $message', tag: 'Service');
+      PaminaLog.d('Service PublishRaw: $message', tag: 'PaminaService');
       final Map<String, dynamic> data = json.decode(message);
       
       // 兼容两种可能存在的 key (Hera 有时使用 'C')
@@ -130,17 +130,17 @@ class MiniAppServiceState extends State<MiniAppService> {
 
       // 专门处理 Hera 的日志上报
       if (event == 'custom_event_H5_LOG_MSG') {
-        MiniAppLog.h5(params);
+        PaminaLog.h5(params);
         return;
       }
 
-      MiniAppLog.d('Publish: event=$event, viewIds=$viewIds', tag: 'Service');
+      PaminaLog.d('Publish: event=$event, viewIds=$viewIds', tag: 'PaminaService');
 
       if (widget.onPublish != null) {
         widget.onPublish!(event, params, viewIds);
       }
     } catch (e) {
-      MiniAppLog.e('Handle publish message error', error: e, tag: 'Service');
+      PaminaLog.e('Handle publish message error', error: e, tag: 'PaminaService');
     }
   }
 
@@ -168,7 +168,7 @@ class MiniAppServiceState extends State<MiniAppService> {
       // 插入到 <head> 标签之后
       content = content.replaceFirst('<head>', '<head>$shim');
 
-      MiniAppLog.i('Loading service.html with symlink support.', tag: 'Service');
+      PaminaLog.i('Loading service.html with symlink support.', tag: 'PaminaService');
 
       _controller.loadHtmlString(
         content,
@@ -178,7 +178,7 @@ class MiniAppServiceState extends State<MiniAppService> {
       );
 
     } else {
-      MiniAppLog.e('入口文件 service.html 不存在: ${serviceFile.path}', tag: 'Service');
+      PaminaLog.e('入口文件 service.html 不存在: ${serviceFile.path}', tag: 'PaminaService');
     }
   }
 

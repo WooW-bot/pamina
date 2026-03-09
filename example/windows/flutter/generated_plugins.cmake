@@ -3,7 +3,6 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  mini_app_flutter
   url_launcher_windows
 )
 

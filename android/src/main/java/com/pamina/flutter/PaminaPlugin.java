@@ -1,4 +1,4 @@
-package com.mini.app.mini_app_flutter;
+package com.pamina.flutter;
 
 import androidx.annotation.NonNull;
 
@@ -8,17 +8,19 @@ import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
 
-/** MiniAppFlutterPlugin */
-public class MiniAppFlutterPlugin implements FlutterPlugin, MethodCallHandler {
-  /// The MethodChannel that will the communication between Flutter and native Android
+/** PaminaPlugin */
+public class PaminaPlugin implements FlutterPlugin, MethodCallHandler {
+  /// The MethodChannel that will the communication between Flutter and native
+  /// Android
   ///
-  /// This local reference serves to register the plugin with the Flutter Engine and unregister it
+  /// This local reference serves to register the plugin with the Flutter Engine
+  /// and unregister it
   /// when the Flutter Engine is detached from the Activity
   private MethodChannel channel;
 
   @Override
   public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
-    channel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "mini_app_flutter");
+    channel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "pamina");
     channel.setMethodCallHandler(this);
   }
 

@@ -1,22 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:mini_app_flutter/src/sync/mini_app_manager.dart';
-import 'src/mini_app_page.dart';
-import 'src/utils/mini_app_log.dart';
+import 'package:pamina/src/sync/pamina_manager.dart';
+import 'src/pamina_app.dart';
+import 'src/utils/pamina_log.dart';
 
-export 'src/mini_app_page.dart';
+export 'src/pamina_app.dart';
 
-/// 小程序插件入口类
+/// Pamina 插件入口类
 ///
 /// @author Parker
-class MiniAppPlugin {
+class Pamina {
   static Future<bool> initFramework() async {
     try {
-      return await MiniAppManager.initFramework();
+      return await PaminaManager.initFramework();
     } catch (e) {
-      MiniAppLog.e(
+      PaminaLog.e(
         'initFramework error (caught at plugin layer)',
         error: e,
-        tag: 'Plugin',
+        tag: 'Pamina',
       );
       return false;
     }
@@ -33,7 +33,7 @@ class MiniAppPlugin {
       PageRouteBuilder(
         pageBuilder:
             (context, animation, secondaryAnimation) =>
-                MiniAppPage(userId: userId, appId: appId, appPath: appPath),
+                PaminaApp(userId: userId, appId: appId, appPath: appPath),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           const begin = Offset(0.0, 1.0);
           const end = Offset.zero;

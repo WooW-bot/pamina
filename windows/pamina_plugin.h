@@ -1,24 +1,24 @@
-#ifndef FLUTTER_PLUGIN_MINI_APP_FLUTTER_PLUGIN_H_
-#define FLUTTER_PLUGIN_MINI_APP_FLUTTER_PLUGIN_H_
+#ifndef FLUTTER_PLUGIN_PAMINA_PLUGIN_H_
+#define FLUTTER_PLUGIN_PAMINA_PLUGIN_H_
 
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
 
 #include <memory>
 
-namespace mini_app_flutter {
+namespace pamina {
 
-class MiniAppFlutterPlugin : public flutter::Plugin {
+class PaminaPlugin : public flutter::Plugin {
  public:
   static void RegisterWithRegistrar(flutter::PluginRegistrarWindows *registrar);
 
-  MiniAppFlutterPlugin();
+  PaminaPlugin();
 
-  virtual ~MiniAppFlutterPlugin();
+  virtual ~PaminaPlugin();
 
   // Disallow copy and assign.
-  MiniAppFlutterPlugin(const MiniAppFlutterPlugin&) = delete;
-  MiniAppFlutterPlugin& operator=(const MiniAppFlutterPlugin&) = delete;
+  PaminaPlugin(const PaminaPlugin&) = delete;
+  PaminaPlugin& operator=(const PaminaPlugin&) = delete;
 
   // Called when a method is called on this plugin's channel from Dart.
   void HandleMethodCall(
@@ -26,6 +26,6 @@ class MiniAppFlutterPlugin : public flutter::Plugin {
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 };
 
-}  // namespace mini_app_flutter
+}  // namespace pamina
 
-#endif  // FLUTTER_PLUGIN_MINI_APP_FLUTTER_PLUGIN_H_
+#endif  // FLUTTER_PLUGIN_PAMINA_PLUGIN_H_

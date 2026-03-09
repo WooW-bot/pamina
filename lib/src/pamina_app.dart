@@ -1,23 +1,25 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'sync/mini_app_manager.dart';
+import 'package:flutter/cupertino.dart';
+import 'sync/pamina_manager.dart';
 import 'utils/storage_util.dart';
-import 'mini_app_service.dart';
+import 'pamina_service.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'mini_app_page_view.dart';
-import 'utils/mini_app_log.dart';
+import 'pamina_page.dart'; // Changed from mini_app_page_view.dart
+import 'utils/pamina_log.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import 'widgets/pamina_ui_widgets.dart';
 
-/// 小程序页面容器
+/// Pamina 容器 (App)
 ///
 /// @author Parker
-class MiniAppPage extends StatefulWidget {
+class PaminaApp extends StatefulWidget {
   final String appId;
   final String appPath;
   final String userId;
 
-  const MiniAppPage({
+  const PaminaApp({
     super.key,
     required this.appId,
     required this.appPath,
@@ -25,12 +27,13 @@ class MiniAppPage extends StatefulWidget {
   });
 
   @override
-  State<MiniAppPage> createState() => _MiniAppPageState();
+  State<PaminaApp> createState() => _PaminaAppState();
 }
 
-class _MiniAppPageState extends State<MiniAppPage> {
-  final GlobalKey<MiniAppServiceState> _serviceKey = GlobalKey();
-  final Map<int, GlobalKey<MiniAppPageViewState>> _pageKeys = {};
+class _PaminaAppState extends State<PaminaApp> {
+  final GlobalKey<PaminaServiceState> _serviceKey = GlobalKey();
+  final Map<int, GlobalKey<PaminaPageState>> _pageKeys = {};
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   bool _isSyncing = true;
   bool _syncError = false;
@@ -79,11 +82,6 @@ class _MiniAppPageState extends State<MiniAppPage> {
   /// 页面初始化期间的消息缓冲区 (当 GlobalKey.currentState 为 null 时使用)
   final Map<int, List<Map<String, String>>> _pageMessageBuffer = {};
 
-  /// 导航栏状态
-  String _navBarTitle = '';
-  String _navBarBgColor = '#F7F7F7';
-  String _navBarTextColor = 'black'; // black or white
-
   @override
   void initState() {
     super.initState();
@@ -91,7 +89,7 @@ class _MiniAppPageState extends State<MiniAppPage> {
   }
 
   Future<void> _syncMiniApp() async {
-    final result = await MiniAppManager.syncMiniApp(
+    final result = await PaminaManager.syncMiniApp(
       widget.appId,
       widget.appPath,
     );
@@ -132,9 +130,9 @@ class _MiniAppPageState extends State<MiniAppPage> {
         pageState.subscribeHandler(event, p);
       } else {
         // 如果页面状态尚未就绪 (比如刚加入 IndexedStack 还没渲染)，存入父级缓冲区
-        MiniAppLog.d(
-          'MiniAppPage: Buffering message for uninitialized view $id (event: $event)',
-          tag: 'Page',
+        PaminaLog.d(
+          'PaminaApp: Buffering message for uninitialized view $id (event: $event)',
+          tag: 'PaminaApp',
         );
         _pageMessageBuffer.putIfAbsent(id, () => []).add({
           'event': event,
@@ -144,7 +142,7 @@ class _MiniAppPageState extends State<MiniAppPage> {
     }
   }
 
-  /// 当 MiniAppPageView 的 initState 执行时回调
+  /// 当 PaminaPage 的 initState 执行时回调
   void _onPageReady(int viewId) {
     // 异步执行，确保 currentState 在下一帧可用
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -159,9 +157,9 @@ class _MiniAppPageState extends State<MiniAppPage> {
 
     final pageState = _pageKeys[viewId]?.currentState;
     if (pageState != null) {
-      MiniAppLog.i(
-        'MiniAppPage: Draining ${buffer.length} buffered messages for view $viewId',
-        tag: 'Page',
+      PaminaLog.i(
+        'PaminaApp: Draining ${buffer.length} buffered messages for view $viewId',
+        tag: 'PaminaApp',
       );
       for (final msg in buffer) {
         pageState.subscribeHandler(msg['event']!, msg['params']!);
@@ -198,11 +196,11 @@ class _MiniAppPageState extends State<MiniAppPage> {
         .toList();
   }
 
-  /// 根据页面路径应用特定配置 (如标题、颜色)
-  void _applyPageConfig(String path) {
-    if (_appConfig == null) return;
+  /// 根据页面路径获取特定配置 (如标题、颜色)
+  Map<String, String> _getPageConfig(String path) {
+    if (_appConfig == null) return {};
     final window = _appConfig!['window'] as Map<String, dynamic>?;
-    if (window == null) return;
+    if (window == null) return {};
 
     // 1. 默认值 (全局 window 配置)
     String title = window['navigationBarTitleText']?.toString() ?? '';
@@ -225,12 +223,11 @@ class _MiniAppPageState extends State<MiniAppPage> {
       }
     }
 
-    MiniAppLog.i('Applying config for page $path: title=$title', tag: 'Page');
-    setState(() {
-      _navBarTitle = title;
-      _navBarBgColor = bgColor;
-      _navBarTextColor = textColor;
-    });
+    return {
+      'title': title,
+      'backgroundColor': bgColor,
+      'textColor': textColor,
+    };
   }
 
   /// 处理来自视图层 (Page) 的事件
@@ -256,7 +253,7 @@ class _MiniAppPageState extends State<MiniAppPage> {
         _readyViewIds.contains(viewId) &&
         _viewIdToOpenType[viewId] == 'appLaunch') {
       final path = _viewIdToPath[viewId] ?? '';
-      MiniAppLog.i('Triggering $viewId appLaunch (path: $path)', tag: 'Page');
+      PaminaLog.i('Triggering $viewId appLaunch (path: $path)', tag: 'PaminaApp');
 
       // 标记为已启动，防止重复进入此逻辑
       _viewIdToOpenType[viewId] = 'navigating';
@@ -272,7 +269,7 @@ class _MiniAppPageState extends State<MiniAppPage> {
     String? callbackId, {
     int? fromViewId,
   }) {
-    MiniAppLog.i('API Invoke: $event (callbackId: $callbackId)', tag: 'Page');
+    PaminaLog.i('API Invoke: $event (callbackId: $callbackId)', tag: 'PaminaApp');
 
     switch (event) {
       case 'initReady':
@@ -284,19 +281,17 @@ class _MiniAppPageState extends State<MiniAppPage> {
         break;
       case 'setNavigationBarTitle':
         final title = json.decode(params)['title']?.toString() ?? '';
-        setState(() => _navBarTitle = title);
+        _pageKeys[fromViewId ?? _activePageId]?.currentState?.updateNavigationBar(title: title);
         _handleInvokeCallback(event, {}, callbackId, fromViewId: fromViewId);
         break;
       case 'setNavigationBarColor':
         final p = json.decode(params);
         final bgColor = p['backgroundColor']?.toString();
-        final textColor = p['frontColor']?.toString(); // 通常是 #ffffff 或 #000000
-        setState(() {
-          if (bgColor != null) _navBarBgColor = bgColor;
-          if (textColor != null) {
-            _navBarTextColor = textColor.contains('ffffff') ? 'white' : 'black';
-          }
-        });
+        final textColor = p['frontColor']?.toString();
+        _pageKeys[fromViewId ?? _activePageId]?.currentState?.updateNavigationBar(
+          backgroundColor: bgColor,
+          textColor: textColor != null ? (textColor.contains('ffffff') ? 'white' : 'black') : null,
+        );
         _handleInvokeCallback(event, {}, callbackId, fromViewId: fromViewId);
         break;
       case 'navigateTo':
@@ -315,7 +310,7 @@ class _MiniAppPageState extends State<MiniAppPage> {
         _handleOpenLink(params, callbackId, fromViewId);
         break;
       default:
-        MiniAppLog.w('Unhandled API: $event', tag: 'Page');
+        PaminaLog.w('Unhandled API: $event', tag: 'PaminaApp');
     }
   }
 
@@ -373,14 +368,14 @@ class _MiniAppPageState extends State<MiniAppPage> {
     final int viewId = _nextViewId++;
     _viewIdToPath[viewId] = path;
     _viewIdToOpenType[viewId] = 'navigateTo';
-    _pageKeys[viewId] = GlobalKey<MiniAppPageViewState>();
-
-    _applyPageConfig(path);
+    _pageKeys[viewId] = GlobalKey<PaminaPageState>();
 
     setState(() {
       _navigationStack.add(viewId);
       _activePageId = viewId;
     });
+
+    _navigatorKey.currentState?.pushNamed('/page', arguments: viewId);
 
     _handleInvokeCallback('navigateTo', {}, callbackId, fromViewId: fromViewId);
 
@@ -405,14 +400,18 @@ class _MiniAppPageState extends State<MiniAppPage> {
     final int viewId = _nextViewId++;
     _viewIdToPath[viewId] = path;
     _viewIdToOpenType[viewId] = 'redirectTo';
-    _pageKeys[viewId] = GlobalKey<MiniAppPageViewState>();
-
-    _applyPageConfig(path);
+    _pageKeys[viewId] = GlobalKey<PaminaPageState>();
 
     setState(() {
       _navigationStack.add(viewId);
       _activePageId = viewId;
     });
+
+    if (_navigationStack.length > 1) {
+      _navigatorKey.currentState?.pushReplacementNamed('/page', arguments: viewId);
+    } else {
+      _navigatorKey.currentState?.pushNamed('/page', arguments: viewId);
+    }
 
     _handleInvokeCallback('redirectTo', {}, callbackId, fromViewId: fromViewId);
 
@@ -440,11 +439,12 @@ class _MiniAppPageState extends State<MiniAppPage> {
             : (_tabViewIds.isNotEmpty ? _tabViewIds[_currentTabIndex] : 1);
 
     final String nextPath = _viewIdToPath[nextActiveId] ?? '';
-    _applyPageConfig(nextPath);
 
     setState(() {
       _activePageId = nextActiveId;
     });
+
+    _navigatorKey.currentState?.pop();
 
     _handleInvokeCallback(
       'navigateBack',
@@ -580,7 +580,7 @@ class _MiniAppPageState extends State<MiniAppPage> {
               _tabViewIds.add(viewId);
               _viewIdToPath[viewId] = path;
               _viewIdToOpenType[viewId] = 'appLaunch'; // 初始都是 launch
-              _pageKeys[viewId] = GlobalKey<MiniAppPageViewState>();
+              _pageKeys[viewId] = GlobalKey<PaminaPageState>();
 
               if (path == root) {
                 _currentTabIndex = i;
@@ -597,57 +597,56 @@ class _MiniAppPageState extends State<MiniAppPage> {
             _activePageId = 1;
             _viewIdToPath[1] = root;
             _viewIdToOpenType[1] = 'appLaunch';
-            _pageKeys[1] = GlobalKey<MiniAppPageViewState>();
+            _pageKeys[1] = GlobalKey<PaminaPageState>();
             _initializedTabViewIds.add(1);
             _nextViewId = 2;
           }
 
           _isServiceReady = true;
-          // 初始化导航栏 (根据首页路径查找配置)
-          _applyPageConfig(root);
+          // 尝试触发首屏跳转
+          _tryTriggerAppLaunch(_activePageId);
         });
 
-        MiniAppLog.i(
+        PaminaLog.i(
           'App Configuration loaded. Root: $_rootPage, Tabs: ${_tabViewIds.length}',
-          tag: 'Page',
+          tag: 'PaminaApp',
         );
 
         // 尝试触发首屏跳转 (逻辑层变动可能比视图层慢，也可能快)
         _tryTriggerAppLaunch(_activePageId);
       }
     } catch (e) {
-      MiniAppLog.e('Parse serviceReady params error', error: e, tag: 'Page');
+      PaminaLog.e('Parse serviceReady params error', error: e, tag: 'PaminaApp');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
-      appBar: MiniAppCapsuleAppBar(
-        title: _navBarTitle,
-        backgroundColor: _navBarBgColor,
-        textColor: _navBarTextColor,
-        showBack: _navigationStack.isNotEmpty,
-        onBack: () => _handleNavigateBack('{"delta":1}', null, null),
-        onClose: () => Navigator.pop(context),
-      ),
-      body: SafeArea(
-        top: false, // AppBar already handles top safe area usually
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, dynamic result) {
+        if (didPop) return;
+        if (_navigationStack.isNotEmpty) {
+          _handleNavigateBack('{"delta":1}', null, null);
+        } else {
+          Navigator.pop(context);
+        }
+      },
+      child: Material(
+        color: const Color(0xFFF7F7F7),
         child: Stack(
           children: [
-            // 1. 逻辑层 (后台运行) - 使用 Offstage 彻底避免其参与 UI 渲染或干扰手势拦截
+            // 1. 逻辑层 (后台运行)
             if (_sourcePath != null)
               Offstage(
                 offstage: true,
-                child: MiniAppService(
+                child: PaminaService(
                   key: _serviceKey,
                   appId: widget.appId,
                   sourcePath: _sourcePath!,
                   onPublish: _handleServicePublish,
-                  onInvoke:
-                      (event, params, callbackId) =>
-                          _handleInvoke(event, params, callbackId),
+                  onInvoke: (event, params, callbackId) =>
+                      _handleInvoke(event, params, callbackId),
                 ),
               ),
 
@@ -659,69 +658,101 @@ class _MiniAppPageState extends State<MiniAppPage> {
                 Expanded(
                   child: _appConfig == null || _sourcePath == null
                       ? const SizedBox.shrink()
-                      : Stack(
-                          children: [
-                            // 2.1 Tab 页面 (IndexedStack)
-                            Positioned.fill(
-                              child: IndexedStack(
-                                index: _currentTabIndex,
-                                children:
-                                    (_tabViewIds.isNotEmpty ? _tabViewIds : [1])
-                                        .map((id) {
-                                if (!_initializedTabViewIds.contains(id)) {
-                                  return const SizedBox.shrink();
-                                }
-                                return MiniAppPageView(
-                                  key: _pageKeys[id],
-                                  appId: widget.appId,
-                                  viewId: id,
-                                  path: _viewIdToPath[id] ?? '',
-                                  sourcePath: _sourcePath!,
-                                  onPublish: _handlePagePublish,
-                                  onInvoke: (event, params, callbackId) =>
-                                      _handleInvoke(event, params, callbackId,
-                                          fromViewId: id),
-                                  onReady: () => _onPageReady(id),
-                                );
-                              }).toList(),
-                              ),
-                            ),
- // 2.2 非 Tab 页面栈 (覆盖在 IndexedStack 之上)
-                            ..._navigationStack.map((id) {
-                              return Positioned.fill(
-                                child: MiniAppPageView(
-                                  key: _pageKeys[id],
-                                  appId: widget.appId,
-                                  viewId: id,
-                                  path: _viewIdToPath[id] ?? '',
-                                  sourcePath: _sourcePath!,
-                                  onPublish: _handlePagePublish,
-                                  onInvoke: (event, params, callbackId) =>
-                                      _handleInvoke(event, params, callbackId,
-                                          fromViewId: id),
-                                  onReady: () => _onPageReady(id),
-                                ),
+                      : Navigator(
+                          key: _navigatorKey,
+                          initialRoute: '/',
+                          onGenerateRoute: (settings) {
+                            if (settings.name == '/') {
+                              return PageRouteBuilder(
+                                pageBuilder: (context, anim1, anim2) =>
+                                    _buildTabStack(),
+                                settings: settings,
                               );
-                            }),
-                          ],
+                            }
+
+                            final int? viewId = settings.arguments as int?;
+                            if (viewId == null) return null;
+
+                            return CupertinoPageRoute(
+                              builder: (context) => _buildSubPage(viewId),
+                              settings: settings,
+                            );
+                          },
                         ),
                 ),
               ],
             ),
 
-            // 3. 状态盖层 (Loading/Error/SplashScreen)
             if (_syncError)
               const Center(
                 child: Text('小程序加载失败', style: TextStyle(color: Colors.red)),
               )
             else if (_isSyncing || _appConfig == null)
-              MiniAppSplashScreen(
-                appName: widget.appId == 'demoapp' ? '小程序示例' : widget.appId,
+              PaminaSplashScreen(
+                appName: widget.appId == 'demoapp' ? 'Pamina 示例' : widget.appId,
               ),
+
+            // TabBar 现在是全局悬浮在底部的
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _buildTabBar() ?? const SizedBox.shrink(),
+            ),
           ],
         ),
       ),
-      bottomNavigationBar: _buildTabBar(),
+    );
+  }
+
+  Widget _buildTabStack() {
+    return IndexedStack(
+      index: _currentTabIndex,
+      children: (_tabViewIds.isNotEmpty ? _tabViewIds : [1]).map((id) {
+        if (!_initializedTabViewIds.contains(id)) {
+          return const SizedBox.shrink();
+        }
+        final path = _viewIdToPath[id] ?? '';
+        final config = _getPageConfig(path);
+        return PaminaPage(
+          key: _pageKeys[id],
+          appId: widget.appId,
+          viewId: id,
+          path: path,
+          sourcePath: _sourcePath!,
+          onPublish: _handlePagePublish,
+          onInvoke: (event, params, callbackId) =>
+              _handleInvoke(event, params, callbackId, fromViewId: id),
+          onReady: () => _onPageReady(id),
+          onClose: () => Navigator.pop(context),
+          initialTitle: config['title'],
+          initialBgColor: config['backgroundColor'],
+          initialTextColor: config['textColor'],
+          showBack: false,
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildSubPage(int viewId) {
+    final path = _viewIdToPath[viewId] ?? '';
+    final config = _getPageConfig(path);
+    return PaminaPage(
+      key: _pageKeys[viewId],
+      appId: widget.appId,
+      viewId: viewId,
+      path: path,
+      sourcePath: _sourcePath!,
+      onPublish: _handlePagePublish,
+      onInvoke: (event, params, callbackId) =>
+          _handleInvoke(event, params, callbackId, fromViewId: viewId),
+      onReady: () => _onPageReady(viewId),
+      onClose: () => Navigator.pop(context),
+      initialTitle: config['title'],
+      initialBgColor: config['backgroundColor'],
+      initialTextColor: config['textColor'],
+      showBack: true,
+      onBack: () => _handleNavigateBack('{"delta":1}', null, null),
     );
   }
 
@@ -734,9 +765,6 @@ class _MiniAppPageState extends State<MiniAppPage> {
     final String? pagePath = tab['pagePath'];
     if (pagePath != null) {
       final int nextViewId = index + 1;
-
-      // 应用页面特定配置
-      _applyPageConfig(pagePath);
 
       setState(() {
         _currentTabIndex = index;
@@ -880,190 +908,4 @@ class _MiniAppPageState extends State<MiniAppPage> {
           }).toList(),
     );
   }
-}
-
-class MiniAppSplashScreen extends StatelessWidget {
-  final Widget? appIcon;
-  final String appName;
-
-  const MiniAppSplashScreen({super.key, this.appIcon, required this.appName});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: double.infinity,
-      child: Column(
-        children: [
-          const Spacer(flex: 1),
-          // Reduced top whitespace (moving content UP)
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              SizedBox(
-                width: 60,
-                height: 60,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    Colors.green.shade400,
-                  ),
-                  backgroundColor: Colors.grey.shade100,
-                ),
-              ),
-              appIcon ??
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF333333),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Center(
-                      child: Icon(
-                        Icons.all_inclusive,
-                        color: Colors.white,
-                        size: 24,
-                      ),
-                    ),
-                  ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Text(
-            appName,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-          const Spacer(flex: 2),
-          // Bottom white space (significantly more than top)
-        ],
-      ),
-    );
-  }
-}
-
-class MiniAppCapsuleAppBar extends StatelessWidget
-    implements PreferredSizeWidget {
-  final String title;
-  final String backgroundColor;
-  final String textColor;
-  final bool showBack;
-  final VoidCallback? onBack;
-  final VoidCallback? onClose;
-
-  const MiniAppCapsuleAppBar({
-    super.key,
-    this.title = '',
-    this.backgroundColor = '#F7F7F7',
-    this.textColor = 'black',
-    this.showBack = false,
-    this.onBack,
-    this.onClose,
-  });
-
-  Color _parseColor(String hex) {
-    hex = hex.replaceAll('#', '');
-    if (hex.length == 6) hex = 'FF$hex';
-    return Color(int.parse(hex, radix: 16));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final Color bgColor = _parseColor(backgroundColor);
-    final Color contentColor =
-        textColor == 'white' ? Colors.white : Colors.black;
-
-    return AppBar(
-      backgroundColor: bgColor,
-      elevation: 0,
-      toolbarHeight: 56,
-      automaticallyImplyLeading: false,
-      leading: showBack
-          ? IconButton(
-              icon: Icon(Icons.arrow_back_ios_new, color: contentColor, size: 20),
-              onPressed: onBack,
-            )
-          : null,
-      centerTitle: true,
-      title: Text(
-        title,
-        style: TextStyle(
-          color: contentColor,
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      actions: [
-        Container(
-          margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.black12, width: 0.5),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(width: 14),
-              Row(
-                children: List.generate(
-                  3,
-                  (index) => Container(
-                    width: index == 1 ? 6 : 4,
-                    height: index == 1 ? 6 : 4,
-                    margin: EdgeInsets.only(right: index == 2 ? 0 : 3),
-                    decoration: BoxDecoration(
-                      color: contentColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                width: 0.5,
-                height: 16,
-                color: contentColor.withAlpha(51),
-              ),
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: onClose ?? () => Navigator.pop(context),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Container(
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: contentColor, width: 2),
-                        shape: BoxShape.circle,
-                        color: Colors.transparent,
-                      ),
-                    ),
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: contentColor,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 14),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  @override
-  Size get preferredSize => const Size.fromHeight(56);
 }

@@ -8,9 +8,9 @@
 #include <string>
 #include <variant>
 
-#include "mini_app_flutter_plugin.h"
+#include "pamina_plugin.h"
 
-namespace mini_app_flutter {
+namespace pamina {
 namespace test {
 
 namespace {
@@ -22,8 +22,8 @@ using flutter::MethodResultFunctions;
 
 }  // namespace
 
-TEST(MiniAppFlutterPlugin, GetPlatformVersion) {
-  MiniAppFlutterPlugin plugin;
+TEST(PaminaPlugin, GetPlatformVersion) {
+  PaminaPlugin plugin;
   // Save the reply value from the success callback.
   std::string result_string;
   plugin.HandleMethodCall(
@@ -40,4 +40,4 @@ TEST(MiniAppFlutterPlugin, GetPlatformVersion) {
 }
 
 }  // namespace test
-}  // namespace mini_app_flutter
+}  // namespace pamina

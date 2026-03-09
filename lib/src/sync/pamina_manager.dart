@@ -3,18 +3,18 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import '../utils/storage_util.dart';
 import '../utils/zip_util.dart';
-import '../utils/mini_app_log.dart';
+import '../utils/pamina_log.dart';
 
-/// 小程序资源管理类
+/// Pamina 资源管理类
 ///
 /// 负责小程序的同步（下载/解压）以及资源校验。
 ///
 /// @author Parker
-class MiniAppManager {
+class PaminaManager {
   /// 插件包名，用于加载插件内部的资源文件 (Assets)
-  static const String _packageName = 'mini_app_flutter';
+  static const String _packageName = 'pamina';
 
-  MiniAppManager._();
+  PaminaManager._();
 
   /// 初始化框架引擎
   ///
@@ -26,16 +26,16 @@ class MiniAppManager {
 
       // 1. 检查框架目录是否已经有内容
       if (await StorageUtil.isFrameworkExists()) {
-        MiniAppLog.i(
+        PaminaLog.i(
           'Framework already exists.',
-          tag: 'Manager',
+          tag: 'PaminaManager',
         );
         return true;
       }
 
-      MiniAppLog.i(
+      PaminaLog.i(
         'Initializing framework to ${frameworkDir.path}',
-        tag: 'Manager',
+        tag: 'PaminaManager',
       );
 
       // 2. 从插件内置 assets 加载 framework.zip
@@ -49,19 +49,19 @@ class MiniAppManager {
         // 3. 解压到框架目录
         final success = await ZipUtil.unzip(bytes, frameworkDir.path);
         if (success) {
-          MiniAppLog.i('Framework initialized.', tag: 'Manager');
+          PaminaLog.i('Framework initialized.', tag: 'PaminaManager');
         }
         return success;
       } catch (e) {
-        MiniAppLog.e(
+        PaminaLog.e(
           '引擎资源加载失败。请确保插件 assets/framework.zip 存在。',
           error: e,
-          tag: 'Manager',
+          tag: 'PaminaManager',
         );
         return false;
       }
     } catch (e) {
-      MiniAppLog.e('initFramework error', error: e, tag: 'Manager');
+      PaminaLog.e('initFramework error', error: e, tag: 'PaminaManager');
       return false;
     }
   }
@@ -96,7 +96,7 @@ class MiniAppManager {
           List<int> bytes = data.buffer.asUint8List();
           unzipSuccess = await ZipUtil.unzip(bytes, outputPath);
         } catch (e) {
-          MiniAppLog.w('资源加载失败 - assets/$appId.zip', tag: 'Manager');
+          PaminaLog.w('资源加载失败 - assets/$appId.zip', tag: 'PaminaManager');
         }
       }
 
@@ -123,7 +123,7 @@ class MiniAppManager {
       final serviceHtml = File(p.join(outputPath, 'service.html'));
       return await serviceHtml.exists();
     } catch (e) {
-      MiniAppLog.e('synchronization error', error: e, tag: 'Manager');
+      PaminaLog.e('synchronization error', error: e, tag: 'PaminaManager');
       return false;
     }
   }

@@ -1,4 +1,4 @@
-group = "com.mini.app.mini_app_flutter"
+group = "com.pamina.flutter"
 version = "1.0"
 
 buildscript {
@@ -22,7 +22,7 @@ rootProject.allprojects {
 apply plugin: "com.android.library"
 
 android {
-    namespace = "com.mini.app.mini_app_flutter"
+    namespace = "com.pamina.flutter"
 
     compileSdk = 35
 

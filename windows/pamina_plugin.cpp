@@ -1,4 +1,4 @@
-#include "mini_app_flutter_plugin.h"
+#include "pamina_plugin.h"
 
 // This must be included before many other Windows headers.
 #include <windows.h>
@@ -13,17 +13,17 @@
 #include <memory>
 #include <sstream>
 
-namespace mini_app_flutter {
+namespace pamina {
 
 // static
-void MiniAppFlutterPlugin::RegisterWithRegistrar(
+void PaminaPlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows *registrar) {
   auto channel =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          registrar->messenger(), "mini_app_flutter",
+          registrar->messenger(), "pamina",
           &flutter::StandardMethodCodec::GetInstance());
 
-  auto plugin = std::make_unique<MiniAppFlutterPlugin>();
+  auto plugin = std::make_unique<PaminaPlugin>();
 
   channel->SetMethodCallHandler(
       [plugin_pointer = plugin.get()](const auto &call, auto result) {
@@ -33,11 +33,11 @@ void MiniAppFlutterPlugin::RegisterWithRegistrar(
   registrar->AddPlugin(std::move(plugin));
 }
 
-MiniAppFlutterPlugin::MiniAppFlutterPlugin() {}
+PaminaPlugin::PaminaPlugin() {}
 
-MiniAppFlutterPlugin::~MiniAppFlutterPlugin() {}
+PaminaPlugin::~PaminaPlugin() {}
 
-void MiniAppFlutterPlugin::HandleMethodCall(
+void PaminaPlugin::HandleMethodCall(
     const flutter::MethodCall<flutter::EncodableValue> &method_call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   if (method_call.method_name().compare("getPlatformVersion") == 0) {
@@ -56,4 +56,4 @@ void MiniAppFlutterPlugin::HandleMethodCall(
   }
 }
 
-}  // namespace mini_app_flutter
+}  // namespace pamina

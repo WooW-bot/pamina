@@ -6,15 +6,16 @@ import 'package:flutter/gestures.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:path/path.dart' as p;
-import 'utils/mini_app_log.dart';
+import 'utils/pamina_log.dart';
+import 'widgets/pamina_ui_widgets.dart';
 
 
-/// 小程序视图层组件 (Page View)
-/// 
+/// Pamina 页面组件 (Page)
+///
 /// 负责渲染小程序的 UI 界面，每个页面对应一个独立的 WebView。
-/// 
+///
 /// @author Parker
-class MiniAppPageView extends StatefulWidget {
+class PaminaPage extends StatefulWidget {
   final String appId;
   final int viewId;
   final String path;
@@ -22,8 +23,14 @@ class MiniAppPageView extends StatefulWidget {
   final Function(String event, String params, int viewId)? onPublish;
   final Function(String event, String params, String? callbackId)? onInvoke;
   final VoidCallback? onReady;
+  final VoidCallback? onClose; // 整个小程序的关闭回调
+  final String? initialTitle;
+  final String? initialBgColor;
+  final String? initialTextColor;
+  final bool? showBack;
+  final VoidCallback? onBack;
 
-  const MiniAppPageView({
+  const PaminaPage({
     super.key,
     required this.appId,
     required this.viewId,
@@ -32,20 +39,38 @@ class MiniAppPageView extends StatefulWidget {
     this.onPublish,
     this.onInvoke,
     this.onReady,
+    this.onClose,
+    this.initialTitle,
+    this.initialBgColor,
+    this.initialTextColor,
+    this.showBack,
+    this.onBack,
   });
 
   @override
-  State<MiniAppPageView> createState() => MiniAppPageViewState();
+  State<PaminaPage> createState() => PaminaPageState();
 }
 
-class MiniAppPageViewState extends State<MiniAppPageView> {
+class PaminaPageState extends State<PaminaPage> {
   late final WebViewController _controller;
   bool _isReady = false;
   final List<String> _messageBuffer = [];
 
+  // 导航栏状态 (由 MiniAppApp 通过 GlobalKey 修改)
+  String _navBarTitle = '';
+  String _navBarBgColor = '#F7F7F7';
+  String _navBarTextColor = 'black';
+  bool _showBack = false;
+  VoidCallback? _onBack;
+
   @override
   void initState() {
     super.initState();
+    _navBarTitle = widget.initialTitle ?? '';
+    _navBarBgColor = widget.initialBgColor ?? '#F7F7F7';
+    _navBarTextColor = widget.initialTextColor ?? 'black';
+    _showBack = widget.showBack ?? false;
+    _onBack = widget.onBack;
     _initController();
     if (widget.onReady != null) {
       widget.onReady!();
@@ -62,7 +87,7 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
             // 运行时注入或 HTML 注入
           },
           onPageFinished: (String url) {
-            MiniAppLog.i('Page layer (${widget.path}) loaded.', tag: 'PageView');
+            PaminaLog.i('Page layer (${widget.path}) loaded.', tag: 'PaminaPage');
             // 核心修复：强制注入 CSS 允许页面滚动，并确保 -webkit-overflow-scrolling 为 touch
             // 许多小程序框架在 body/html 上禁用了滚动，通过注入覆盖这些样式。
             _controller.runJavaScript("""
@@ -110,7 +135,7 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
   }
 
   @override
-  void didUpdateWidget(covariant MiniAppPageView oldWidget) {
+  void didUpdateWidget(covariant PaminaPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.path != widget.path || oldWidget.sourcePath != widget.sourcePath) {
       _loadPage();
@@ -120,7 +145,7 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
   void _handleInvokeMessage(String message) {
     try {
       // 记录原始消息以供调试
-      MiniAppLog.d('PageView[${widget.viewId}] InvokeRaw: $message', tag: 'PageView');
+      PaminaLog.d('Page[${widget.viewId}] InvokeRaw: $message', tag: 'PaminaPage');
       final Map<String, dynamic> data = json.decode(message);
       
       // Hera 框架在 Invoke 时可能使用 'C' 作为 event key (Command)
@@ -128,26 +153,26 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
       final String params = data['paramsString'] ?? '{}';
       final String? callbackId = data['callbackId']?.toString();
 
-      MiniAppLog.d('PageView[${widget.viewId}] Invoke: event=$event', tag: 'PageView');
+      PaminaLog.d('Page[${widget.viewId}] Invoke: event=$event', tag: 'PaminaPage');
 
       if (widget.onInvoke != null) {
         widget.onInvoke!(event, params, callbackId);
       }
     } catch (e) {
-      MiniAppLog.e('Handle PageView invoke error', error: e, tag: 'PageView');
+      PaminaLog.e('Handle Page invoke error', error: e, tag: 'PaminaPage');
     }
   }
 
   void _handlePublishMessage(String message) {
     try {
       // 记录原始消息以供调试
-      MiniAppLog.d('PageView[${widget.viewId}] PublishRaw: $message', tag: 'PageView');
+      PaminaLog.d('Page[${widget.viewId}] PublishRaw: $message', tag: 'PaminaPage');
       final Map<String, dynamic> data = json.decode(message);
       // 兼容两种可能存在的 key (Hera 有时使用 'C')
       final String event = data['event'] ?? data['C'] ?? '';
       final String params = data['paramsString'] ?? '{}';
 
-      MiniAppLog.d('PageView[${widget.viewId}] Publish: event=$event', tag: 'PageView');
+      PaminaLog.d('Page[${widget.viewId}] Publish: event=$event', tag: 'PaminaPage');
 
       // 如果是 DOMContentLoaded，代表视图层 DOM 加载完成，通知逻辑层
       if (event == 'custom_event_DOMContentLoaded') {
@@ -159,13 +184,13 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
         widget.onPublish!(event, params, widget.viewId);
       }
     } catch (e) {
-      MiniAppLog.e('Handle PageView publish error', error: e, tag: 'PageView');
+      PaminaLog.e('Handle Page publish error', error: e, tag: 'PaminaPage');
     }
   }
 
   void _flushMessageBuffer() {
     if (_messageBuffer.isEmpty) return;
-    MiniAppLog.i('PageView[${widget.viewId}] Flushing ${_messageBuffer.length} buffered messages', tag: 'PageView');
+    PaminaLog.i('Page[${widget.viewId}] Flushing ${_messageBuffer.length} buffered messages', tag: 'PaminaPage');
     for (final js in _messageBuffer) {
       _controller.runJavaScript(js);
     }
@@ -202,7 +227,7 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
       // 插入到 <head> 标签之后
       content = content.replaceFirst('<head>', '<head>$shim');
 
-      MiniAppLog.i('PageView loading ${widget.path} with symlink support.', tag: 'PageView');
+      PaminaLog.i('Page loading ${widget.path} with symlink support.', tag: 'PaminaPage');
 
       _controller.loadHtmlString(
         content,
@@ -211,7 +236,7 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
       );
 
     } else {
-      MiniAppLog.e('页面文件不存在: ${pageFile.path}', tag: 'PageView');
+      PaminaLog.e('页面文件不存在: ${pageFile.path}', tag: 'PaminaPage');
     }
   }
 
@@ -221,7 +246,7 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
     final js = "window.HeraJSBridge && window.HeraJSBridge.subscribeHandler && window.HeraJSBridge.subscribeHandler('$event', $params)";
     
     if (!_isReady) {
-      MiniAppLog.d('PageView[${widget.viewId}] Buffering subscribeHandler: $event', tag: 'PageView');
+      PaminaLog.d('Page[${widget.viewId}] Buffering subscribeHandler: $event', tag: 'PaminaPage');
       _messageBuffer.add(js);
       return;
     }
@@ -230,23 +255,56 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
 
   /// 向视图层发送监听回调 (API 回调)
   void invokeCallbackHandler(String callbackId, String result) {
-    final js = "window.HeraJSBridge && window.HeraJSBridge.invokeCallbackHandler && window.HeraJSBridge.invokeCallbackHandler('$callbackId', $result)";
-    
+    final js =
+        "window.HeraJSBridge && window.HeraJSBridge.invokeCallbackHandler && window.HeraJSBridge.invokeCallbackHandler('$callbackId', $result)";
+
     if (!_isReady) {
-      MiniAppLog.d('PageView[${widget.viewId}] Buffering invokeCallbackHandler: $callbackId', tag: 'PageView');
+      PaminaLog.d(
+        'Page[${widget.viewId}] Buffering invokeCallbackHandler: $callbackId',
+        tag: 'PaminaPage',
+      );
       _messageBuffer.add(js);
       return;
     }
     _controller.runJavaScript(js);
   }
 
+  /// 更新导航栏配置
+  void updateNavigationBar({
+    String? title,
+    String? backgroundColor,
+    String? textColor,
+    bool? showBack,
+    VoidCallback? onBack,
+  }) {
+    if (!mounted) return;
+    setState(() {
+      if (title != null) _navBarTitle = title;
+      if (backgroundColor != null) _navBarBgColor = backgroundColor;
+      if (textColor != null) _navBarTextColor = textColor;
+      if (showBack != null) _showBack = showBack;
+      if (onBack != null) _onBack = onBack;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return WebViewWidget(
-      controller: _controller,
-      gestureRecognizers: {
-        Factory<EagerGestureRecognizer>(() => EagerGestureRecognizer()),
-      },
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: PaminaCapsuleAppBar(
+        title: _navBarTitle,
+        backgroundColor: _navBarBgColor,
+        textColor: _navBarTextColor,
+        showBack: _showBack,
+        onBack: _onBack,
+        onClose: widget.onClose,
+      ),
+      body: WebViewWidget(
+        controller: _controller,
+        gestureRecognizers: {
+          Factory<EagerGestureRecognizer>(() => EagerGestureRecognizer()),
+        },
+      ),
     );
   }
 }
