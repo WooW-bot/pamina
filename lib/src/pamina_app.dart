@@ -1,14 +1,17 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'sync/pamina_manager.dart';
 import 'utils/storage_util.dart';
 import 'pamina_service.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'pamina_page.dart'; // Changed from mini_app_page_view.dart
+import 'pamina_page.dart';
 import 'utils/pamina_log.dart';
-import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:path/path.dart' as p;
+import 'dart:io';
 import 'widgets/pamina_ui_widgets.dart';
 
 /// Pamina 容器 (App)
@@ -82,6 +85,15 @@ class _PaminaAppState extends State<PaminaApp> {
   /// 页面初始化期间的消息缓冲区 (当 GlobalKey.currentState 为 null 时使用)
   final Map<int, List<Map<String, String>>> _pageMessageBuffer = {};
 
+  /// 全局 Toast/Loading 配置
+  Map<String, dynamic> _toastConfig = {
+    'visible': false,
+    'title': '',
+    'icon': 'none',
+    'mask': false,
+  };
+  Timer? _toastTimer;
+
   @override
   void initState() {
     super.initState();
@@ -150,6 +162,15 @@ class _PaminaAppState extends State<PaminaApp> {
     });
   }
 
+  void _onPageDispose(int viewId) {
+    _pageKeys.remove(viewId);
+    _viewIdToPath.remove(viewId);
+    _viewIdToOpenType.remove(viewId);
+    _readyViewIds.remove(viewId);
+    _pageMessageBuffer.remove(viewId);
+    PaminaLog.d('PaminaApp: Disposed state for view $viewId', tag: 'PaminaApp');
+  }
+
   /// 消耗并发送缓冲区中的消息
   void _drainPageMessageBuffer(int viewId) {
     final buffer = _pageMessageBuffer.remove(viewId);
@@ -207,6 +228,7 @@ class _PaminaAppState extends State<PaminaApp> {
     String bgColor =
         window['navigationBarBackgroundColor']?.toString() ?? '#F7F7F7';
     String textColor = window['navigationBarTextStyle']?.toString() ?? 'black';
+    bool enableRefresh = window['enablePullDownRefresh'] == true;
 
     // 2. 页面特定配置 (pages 映射)
     final pages = window['pages'] as Map<String, dynamic>?;
@@ -221,12 +243,16 @@ class _PaminaAppState extends State<PaminaApp> {
       if (pageConfig.containsKey('navigationBarTextStyle')) {
         textColor = pageConfig['navigationBarTextStyle'].toString();
       }
+      if (pageConfig.containsKey('enablePullDownRefresh')) {
+        enableRefresh = pageConfig['enablePullDownRefresh'] == true;
+      }
     }
 
     return {
       'title': title,
       'backgroundColor': bgColor,
       'textColor': textColor,
+      'enablePullDownRefresh': enableRefresh.toString(),
     };
   }
 
@@ -309,6 +335,43 @@ class _PaminaAppState extends State<PaminaApp> {
       case 'openLink':
         _handleOpenLink(params, callbackId, fromViewId);
         break;
+      case 'showNavigationBarLoading':
+        _pageKeys[fromViewId ?? _activePageId]?.currentState?.updateNavigationBar(isLoading: true);
+        _handleInvokeCallback(event, {}, callbackId, fromViewId: fromViewId);
+        break;
+      case 'hideNavigationBarLoading':
+        _pageKeys[fromViewId ?? _activePageId]?.currentState?.updateNavigationBar(isLoading: false);
+        _handleInvokeCallback(event, {}, callbackId, fromViewId: fromViewId);
+        break;
+      case 'showToast':
+        _handleShowToast(params, callbackId, fromViewId);
+        break;
+      case 'hideToast':
+        _handleHideToast(callbackId, fromViewId);
+        break;
+      case 'showLoading':
+        _handleShowLoading(params, callbackId, fromViewId);
+        break;
+      case 'hideLoading':
+        _handleHideToast(callbackId, fromViewId); // hideLoading typically uses hideToast logic
+        break;
+      case 'startPullDownRefresh':
+        _pageKeys[fromViewId ?? _activePageId]?.currentState?.startPullDownRefresh();
+        _handleInvokeCallback(event, {}, callbackId, fromViewId: fromViewId);
+        break;
+      case 'stopPullDownRefresh':
+        _pageKeys[fromViewId ?? _activePageId]?.currentState?.stopPullDownRefresh();
+        _handleInvokeCallback(event, {}, callbackId, fromViewId: fromViewId);
+        break;
+      case 'showActionSheet':
+        _handleShowActionSheet(params, callbackId, fromViewId);
+        break;
+      case 'showModal':
+        _handleShowModal(params, callbackId, fromViewId);
+        break;
+      case 'getNetworkType':
+        _handleGetNetworkType(callbackId, fromViewId);
+        break;
       default:
         PaminaLog.w('Unhandled API: $event', tag: 'PaminaApp');
     }
@@ -335,29 +398,329 @@ class _PaminaAppState extends State<PaminaApp> {
     }
   }
 
-  void _handleGetSystemInfo(String? callbackId, int? fromViewId) {
+  void _handleShowToast(String params, String? callbackId, int? fromViewId) {
+    final Map<String, dynamic> data = json.decode(params);
+    final String title = data['title']?.toString() ?? '';
+    final String icon = data['icon']?.toString() ?? 'success';
+    final int duration = data['duration'] is int ? data['duration'] : 1500;
+    final bool mask = data['mask'] == true;
+
+    PaminaLog.d('Showing toast: title=$title, icon=$icon, duration=$duration, mask=$mask', tag: 'PaminaApp');
+
+    _toastTimer?.cancel();
+    setState(() {
+      _toastConfig = {
+        'visible': true,
+        'title': title,
+        'icon': icon,
+        'mask': mask,
+      };
+    });
+
+    if (duration > 0) {
+      _toastTimer = Timer(Duration(milliseconds: duration), () {
+        if (mounted) {
+          PaminaLog.d('Toast auto-hiding after $duration ms', tag: 'PaminaApp');
+          setState(() {
+            _toastConfig = Map.from(_toastConfig)..['visible'] = false;
+          });
+        }
+      });
+    }
+
+    _handleInvokeCallback('showToast', {}, callbackId, fromViewId: fromViewId);
+  }
+
+  void _handleShowLoading(String params, String? callbackId, int? fromViewId) {
+    final Map<String, dynamic> data = json.decode(params);
+    final String title = data['title']?.toString() ?? '';
+    final bool mask = data['mask'] == true;
+
+    PaminaLog.d('Showing loading: title=$title, mask=$mask', tag: 'PaminaApp');
+
+    _toastTimer?.cancel();
+    setState(() {
+      _toastConfig = {
+        'visible': true,
+        'title': title,
+        'icon': 'loading',
+        'mask': mask,
+      };
+    });
+
+    _handleInvokeCallback('showLoading', {}, callbackId, fromViewId: fromViewId);
+  }
+
+  void _handleHideToast(String? callbackId, int? fromViewId) {
+    PaminaLog.d('Hiding toast/loading', tag: 'PaminaApp');
+    _toastTimer?.cancel();
+    setState(() {
+      _toastConfig = Map.from(_toastConfig)..['visible'] = false;
+    });
+    _handleInvokeCallback('hideToast', {}, callbackId, fromViewId: fromViewId);
+  }
+
+  void _handleShowActionSheet(String params, String? callbackId, int? fromViewId) {
+    try {
+      final Map<String, dynamic> data = json.decode(params);
+      final List itemList = data['itemList'] ?? [];
+      final String itemColorStr = data['itemColor']?.toString() ?? '#000000';
+      final String cancelText = data['cancelText']?.toString() ?? '取消';
+      final String cancelColorStr = data['cancelColor']?.toString() ?? '#000000';
+
+      PaminaLog.i('Showing action sheet: ${itemList.length} items', tag: 'PaminaApp');
+
+      final Color itemColor = _parseColor(itemColorStr);
+      final Color cancelColor = _parseColor(cancelColorStr);
+
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (context) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ...List.generate(itemList.length, (index) {
+                    return Column(
+                      children: [
+                        InkWell(
+                          onTap: () {
+                            PaminaLog.i('Action sheet item $index selected', tag: 'PaminaApp');
+                            Navigator.pop(context, index);
+                          },
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            alignment: Alignment.center,
+                            child: Text(
+                              itemList[index].toString(),
+                              style: TextStyle(color: itemColor, fontSize: 18),
+                            ),
+                          ),
+                        ),
+                        if (index < itemList.length - 1)
+                          const Divider(
+                            height: 0.5,
+                            thickness: 0.5,
+                            color: Colors.black12,
+                          ),
+                      ],
+                    );
+                  }),
+                  Container(height: 8, color: Colors.black12.withOpacity(0.05)),
+                  InkWell(
+                    onTap: () {
+                      PaminaLog.i('Action sheet cancelled', tag: 'PaminaApp');
+                      Navigator.pop(context);
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      alignment: Alignment.center,
+                      child: Text(
+                        cancelText,
+                        style: TextStyle(color: cancelColor, fontSize: 18),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ).then((index) {
+        if (index != null && index is int) {
+          _handleInvokeCallback('showActionSheet', {'tapIndex': index}, callbackId, fromViewId: fromViewId);
+        } else {
+          _handleInvokeCallback('showActionSheet', {'errMsg': 'showActionSheet:fail cancel'}, callbackId, fromViewId: fromViewId);
+        }
+      });
+    } catch (e) {
+      PaminaLog.e('Handle showActionSheet error', error: e, tag: 'PaminaApp');
+      _handleInvokeCallback('showActionSheet', {'errMsg': 'showActionSheet:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  void _handleShowModal(String params, String? callbackId, int? fromViewId) {
+    try {
+      final Map<String, dynamic> data = json.decode(params);
+      final String title = data['title']?.toString() ?? '';
+      final String content = data['content']?.toString() ?? '';
+      final bool showCancel = data['showCancel'] ?? true;
+      final String cancelText = data['cancelText']?.toString() ?? '取消';
+      final String cancelColorStr = data['cancelColor']?.toString() ?? '#000000';
+      final String confirmText = data['confirmText']?.toString() ?? '确定';
+      final String confirmColorStr = data['confirmColor']?.toString() ?? '#3CC51F';
+
+      PaminaLog.i('Showing custom modal: $title', tag: 'PaminaApp');
+
+      final Color cancelColor = _parseColor(cancelColorStr);
+      final Color confirmColor = _parseColor(confirmColorStr);
+
+      showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return PaminaCustomModal(
+            title: title,
+            content: content,
+            showCancel: showCancel,
+            cancelText: cancelText,
+            cancelColor: cancelColor,
+            confirmText: confirmText,
+            confirmColor: confirmColor,
+            onAction: (confirmed) => Navigator.pop(context, confirmed),
+          );
+        },
+      ).then((confirmed) {
+        final bool isConfirm = confirmed == true;
+        _handleInvokeCallback(
+          'showModal',
+          {'confirm': isConfirm, 'cancel': !isConfirm},
+          callbackId,
+          fromViewId: fromViewId,
+        );
+      });
+    } catch (e) {
+      PaminaLog.e('Handle showModal error', error: e, tag: 'PaminaApp');
+      _handleInvokeCallback('showModal', {'errMsg': 'showModal:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  Color _parseColor(String colorStr, {Color defaultColor = Colors.black}) {
+    if (colorStr.isEmpty) return defaultColor;
+    String hex = colorStr.replaceAll('#', '');
+    if (hex.length == 6) {
+      hex = 'FF$hex';
+    } else if (hex.length == 3) {
+      final r = hex[0];
+      final g = hex[1];
+      final b = hex[2];
+      hex = 'FF$r$r$g$g$b$b';
+    } else if (hex.length == 8) {
+      // already has alpha
+    } else {
+      return defaultColor;
+    }
+    try {
+      return Color(int.parse(hex, radix: 16));
+    } catch (e) {
+      return defaultColor;
+    }
+  }
+
+  void _handleGetSystemInfo(String? callbackId, int? fromViewId) async {
     final media = MediaQuery.of(context);
+    final deviceInfo = DeviceInfoPlugin();
+    String brand = 'Unknown';
+    String model = 'Virtual Device';
+    String system = 'Unknown';
+    String platform = Theme.of(context).platform == TargetPlatform.iOS ? 'ios' : 'android';
+
+    try {
+      if (Theme.of(context).platform == TargetPlatform.android) {
+        final androidInfo = await deviceInfo.androidInfo;
+        brand = androidInfo.brand;
+        model = androidInfo.model;
+        system = 'Android ${androidInfo.version.release}';
+      } else if (Theme.of(context).platform == TargetPlatform.iOS) {
+        final iosInfo = await deviceInfo.iosInfo;
+        brand = 'Apple';
+        model = iosInfo.utsname.machine; 
+        system = '${iosInfo.systemName} ${iosInfo.systemVersion}';
+      }
+    } catch (e) {
+      PaminaLog.w('Failed to get device info: $e', tag: 'PaminaApp');
+    }
+
+    // WeChat values are rounded to logical pixels
+    final double pixelRatio = media.devicePixelRatio;
+    final double screenWidth = media.size.width;
+    final double screenHeight = media.size.height;
+    
+    // Calculate windowHeight correctly
+    // Available height = screenHeight - statusBar - navigationBar (56) - tabBar (if any)
+    double windowHeight = screenHeight;
+    windowHeight -= media.padding.top; // statusBar
+    windowHeight -= 56; // navigationBar (PaminaPage AppBar height)
+    
+    // TabBar height
+    bool hasTabBar = _navigationStack.isEmpty && _tabBarConfig != null;
+    if (hasTabBar) {
+      // BottomNavigationBar height is roughly 56 + bottom padding
+      windowHeight -= (56 + media.padding.bottom);
+    } else {
+       // On sub-pages, we still might have bottom padding (home indicator)
+       windowHeight -= media.padding.bottom;
+    }
+
     final data = {
-      'model': 'MiniApp Virtual Device',
-      'pixelRatio': media.devicePixelRatio,
-      'windowWidth': media.size.width,
-      'windowHeight': media.size.height,
-      'screenWidth': media.size.width,
-      'screenHeight': media.size.height,
+      'brand': brand,
+      'model': model,
+      'pixelRatio': pixelRatio, 
+      'screenWidth': screenWidth.round(),
+      'screenHeight': screenHeight.round(),
+      'windowWidth': screenWidth.round(),
+      'windowHeight': windowHeight.round(),
+      'statusBarHeight': media.padding.top.round(),
       'language': 'zh_CN',
       'version': '1.0.0',
-      'system': 'MiniAppOS 1.0',
-      'platform':
-          Theme.of(context).platform == TargetPlatform.iOS ? 'ios' : 'android',
+      'system': system,
+      'platform': platform,
       'fontSizeSetting': 16,
       'SDKVersion': '1.0.0',
+      'safeArea': {
+        'top': media.padding.top.round(),
+        'left': media.padding.left.round(),
+        'right': (screenWidth - media.padding.right).round(),
+        'bottom': (screenHeight - media.padding.bottom).round(),
+        'width': screenWidth.round(),
+        'height': (screenHeight - media.padding.top - media.padding.bottom).round(),
+      }
     };
+
     _handleInvokeCallback(
       'getSystemInfo',
       data,
       callbackId,
       fromViewId: fromViewId,
     );
+  }
+
+  void _handleGetNetworkType(String? callbackId, int? fromViewId) async {
+    try {
+      final List<ConnectivityResult> connectivityResults = await Connectivity().checkConnectivity();
+      String networkType = 'unknown';
+
+      if (connectivityResults.contains(ConnectivityResult.none)) {
+        networkType = 'none';
+      } else if (connectivityResults.contains(ConnectivityResult.wifi)) {
+        networkType = 'wifi';
+      } else if (connectivityResults.contains(ConnectivityResult.mobile)) {
+        // Standard mini-app returns '2g', '3g', '4g', '5g'. 
+        // connectivity_plus doesn't distinguish easily without more plugins.
+        // Defaulting to '4g' or 'mobile' is common for simple bridges.
+        networkType = 'mobile';
+      } else if (connectivityResults.contains(ConnectivityResult.ethernet)) {
+        networkType = 'ethernet';
+      }
+
+      PaminaLog.i('Network type: $networkType', tag: 'PaminaApp');
+      _handleInvokeCallback('getNetworkType', {'networkType': networkType}, callbackId, fromViewId: fromViewId);
+    } catch (e) {
+      PaminaLog.e('Handle getNetworkType error', error: e, tag: 'PaminaApp');
+      _handleInvokeCallback('getNetworkType', {'errMsg': 'getNetworkType:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
   }
 
   void _handleNavigateTo(String params, String? callbackId, int? fromViewId) {
@@ -388,13 +751,15 @@ class _PaminaAppState extends State<PaminaApp> {
     String url = data['url']?.toString() ?? '';
     final path = _normalizeUrl(url, fromViewId: fromViewId);
 
-    if (_navigationStack.isNotEmpty) {
-      final int oldViewId = _navigationStack.removeLast();
-      _pageKeys.remove(oldViewId);
-      _viewIdToPath.remove(oldViewId);
-      _viewIdToOpenType.remove(oldViewId);
-      _readyViewIds.remove(oldViewId);
-      _pageMessageBuffer.remove(oldViewId);
+    final bool wasSubPage = _navigationStack.isNotEmpty;
+
+    if (wasSubPage) {
+      _navigationStack.removeLast();
+      // Note: We keep the old state in _viewIdToPath/etc for a moment
+      // to avoid errors during Navigator transition rebuilds.
+      // But we remove the GlobalKey to prevent logic conflicts.
+      // Actually, it's safer to just let the old page rebuild with its old path
+      // until it's actually unmounted.
     }
 
     final int viewId = _nextViewId++;
@@ -407,7 +772,7 @@ class _PaminaAppState extends State<PaminaApp> {
       _activePageId = viewId;
     });
 
-    if (_navigationStack.length > 1) {
+    if (wasSubPage) {
       _navigatorKey.currentState?.pushReplacementNamed('/page', arguments: viewId);
     } else {
       _navigatorKey.currentState?.pushNamed('/page', arguments: viewId);
@@ -424,12 +789,9 @@ class _PaminaAppState extends State<PaminaApp> {
 
     final int delta = json.decode(params)['delta'] ?? 1;
     for (int i = 0; i < delta && _navigationStack.isNotEmpty; i++) {
-      final int viewId = _navigationStack.removeLast();
-      _pageKeys.remove(viewId);
-      _viewIdToPath.remove(viewId);
-      _viewIdToOpenType.remove(viewId);
-      _readyViewIds.remove(viewId);
-      _pageMessageBuffer.remove(viewId);
+      _navigationStack.removeLast();
+      // We don't remove from _viewIdToPath immediately here to avoid .html errors
+      // during the pop transition rebuild.
     }
 
     // 确定新的活跃页面 ID (栈顶或当前 Tab)
@@ -697,7 +1059,30 @@ class _PaminaAppState extends State<PaminaApp> {
               left: 0,
               right: 0,
               bottom: 0,
-              child: _buildTabBar() ?? const SizedBox.shrink(),
+                child: _buildTabBar() ?? const SizedBox.shrink(),
+            ),
+
+            // 全局弹窗
+            Positioned.fill(
+              child: PaminaToast(
+                visible: _toastConfig['visible'] ?? false,
+                title: _toastConfig['title'] ?? '',
+                icon: _toastConfig['icon'] ?? 'none',
+                mask: _toastConfig['mask'] ?? false,
+              ),
+            ),
+
+            // 全局胶囊按钮 (WeChat Style)
+            Positioned(
+              right: 16,
+              top: MediaQuery.of(context).padding.top + 8,
+              child: PaminaCapsule(
+                onClose: () => Navigator.pop(context),
+                onMenu: () {
+                   PaminaLog.i('Global menu clicked', tag: 'PaminaApp');
+                   // TODO: Implement global menu (e.g., share, about, etc.)
+                },
+              ),
             ),
           ],
         ),
@@ -725,17 +1110,22 @@ class _PaminaAppState extends State<PaminaApp> {
               _handleInvoke(event, params, callbackId, fromViewId: id),
           onReady: () => _onPageReady(id),
           onClose: () => Navigator.pop(context),
+          onDispose: () => _onPageDispose(id),
           initialTitle: config['title'],
           initialBgColor: config['backgroundColor'],
           initialTextColor: config['textColor'],
           showBack: false,
+          enablePullDownRefresh: config['enablePullDownRefresh'] == 'true',
         );
       }).toList(),
     );
   }
 
   Widget _buildSubPage(int viewId) {
-    final path = _viewIdToPath[viewId] ?? '';
+    final path = _viewIdToPath[viewId];
+    if (path == null || path.isEmpty) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
     final config = _getPageConfig(path);
     return PaminaPage(
       key: _pageKeys[viewId],
@@ -748,10 +1138,12 @@ class _PaminaAppState extends State<PaminaApp> {
           _handleInvoke(event, params, callbackId, fromViewId: viewId),
       onReady: () => _onPageReady(viewId),
       onClose: () => Navigator.pop(context),
+      onDispose: () => _onPageDispose(viewId),
       initialTitle: config['title'],
       initialBgColor: config['backgroundColor'],
       initialTextColor: config['textColor'],
       showBack: true,
+      enablePullDownRefresh: config['enablePullDownRefresh'] == 'true',
       onBack: () => _handleNavigateBack('{"delta":1}', null, null),
     );
   }

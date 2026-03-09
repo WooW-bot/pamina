@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -27,8 +28,10 @@ class PaminaPage extends StatefulWidget {
   final String? initialTitle;
   final String? initialBgColor;
   final String? initialTextColor;
-  final bool? showBack;
+  final bool showBack;
+  final bool enablePullDownRefresh;
   final VoidCallback? onBack;
+  final VoidCallback? onDispose;
 
   const PaminaPage({
     super.key,
@@ -40,10 +43,12 @@ class PaminaPage extends StatefulWidget {
     this.onInvoke,
     this.onReady,
     this.onClose,
+    this.onDispose,
     this.initialTitle,
     this.initialBgColor,
     this.initialTextColor,
-    this.showBack,
+    this.showBack = false,
+    this.enablePullDownRefresh = false,
     this.onBack,
   });
 
@@ -56,10 +61,27 @@ class PaminaPageState extends State<PaminaPage> {
   bool _isReady = false;
   final List<String> _messageBuffer = [];
 
+  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
+      GlobalKey<RefreshIndicatorState>();
+
+  Completer<void>? _pullDownRefreshCompleter;
+
+  /// 停止下拉刷新动画
+  void stopPullDownRefresh() {
+    _pullDownRefreshCompleter?.complete();
+    _pullDownRefreshCompleter = null;
+  }
+
+  /// 开始下拉刷新动画
+  void startPullDownRefresh() {
+    _refreshIndicatorKey.currentState?.show();
+  }
+
   // 导航栏状态 (由 MiniAppApp 通过 GlobalKey 修改)
   String _navBarTitle = '';
   String _navBarBgColor = '#F7F7F7';
   String _navBarTextColor = 'black';
+  bool _navBarLoading = false;
   bool _showBack = false;
   VoidCallback? _onBack;
 
@@ -69,12 +91,20 @@ class PaminaPageState extends State<PaminaPage> {
     _navBarTitle = widget.initialTitle ?? '';
     _navBarBgColor = widget.initialBgColor ?? '#F7F7F7';
     _navBarTextColor = widget.initialTextColor ?? 'black';
-    _showBack = widget.showBack ?? false;
+    _showBack = widget.showBack;
     _onBack = widget.onBack;
     _initController();
     if (widget.onReady != null) {
       widget.onReady!();
     }
+  }
+
+  @override
+  void dispose() {
+    if (widget.onDispose != null) {
+      widget.onDispose!();
+    }
+    super.dispose();
   }
 
   void _initController() {
@@ -88,8 +118,6 @@ class PaminaPageState extends State<PaminaPage> {
           },
           onPageFinished: (String url) {
             PaminaLog.i('Page layer (${widget.path}) loaded.', tag: 'PaminaPage');
-            // 核心修复：强制注入 CSS 允许页面滚动，并确保 -webkit-overflow-scrolling 为 touch
-            // 许多小程序框架在 body/html 上禁用了滚动，通过注入覆盖这些样式。
             _controller.runJavaScript("""
               (function() {
                 var style = document.createElement('style');
@@ -144,11 +172,9 @@ class PaminaPageState extends State<PaminaPage> {
 
   void _handleInvokeMessage(String message) {
     try {
-      // 记录原始消息以供调试
       PaminaLog.d('Page[${widget.viewId}] InvokeRaw: $message', tag: 'PaminaPage');
       final Map<String, dynamic> data = json.decode(message);
       
-      // Hera 框架在 Invoke 时可能使用 'C' 作为 event key (Command)
       final String event = data['C'] ?? data['event'] ?? '';
       final String params = data['paramsString'] ?? '{}';
       final String? callbackId = data['callbackId']?.toString();
@@ -165,16 +191,13 @@ class PaminaPageState extends State<PaminaPage> {
 
   void _handlePublishMessage(String message) {
     try {
-      // 记录原始消息以供调试
       PaminaLog.d('Page[${widget.viewId}] PublishRaw: $message', tag: 'PaminaPage');
       final Map<String, dynamic> data = json.decode(message);
-      // 兼容两种可能存在的 key (Hera 有时使用 'C')
       final String event = data['event'] ?? data['C'] ?? '';
       final String params = data['paramsString'] ?? '{}';
 
       PaminaLog.d('Page[${widget.viewId}] Publish: event=$event', tag: 'PaminaPage');
 
-      // 如果是 DOMContentLoaded，代表视图层 DOM 加载完成，通知逻辑层
       if (event == 'custom_event_DOMContentLoaded') {
         _isReady = true;
         _flushMessageBuffer();
@@ -198,7 +221,7 @@ class PaminaPageState extends State<PaminaPage> {
   }
 
   Future<void> _loadPage() async {
-    // 页面 HTML 路径通常是 appId/source/path.html
+    if (widget.path.isEmpty) return;
     final pageFile = File(
       p.join(
         widget.sourcePath,
@@ -209,7 +232,6 @@ class PaminaPageState extends State<PaminaPage> {
     if (pageFile.existsSync()) {
       String content = await pageFile.readAsString();
 
-      // 核心修复：注入动态 Shim
       const shim = """
 <script id="hera-flutter-shim">
 (function() {
@@ -224,14 +246,12 @@ class PaminaPageState extends State<PaminaPage> {
 })();
 </script>
 """;
-      // 插入到 <head> 标签之后
       content = content.replaceFirst('<head>', '<head>$shim');
 
       PaminaLog.i('Page loading ${widget.path} with symlink support.', tag: 'PaminaPage');
 
       _controller.loadHtmlString(
         content,
-        // baseUrl 改为源码根目录，统一路径计算逻辑
         baseUrl: widget.sourcePath.endsWith('/') ? 'file://${widget.sourcePath}' : 'file://${widget.sourcePath}/',
       );
 
@@ -240,9 +260,7 @@ class PaminaPageState extends State<PaminaPage> {
     }
   }
 
-  /// 向视图层发送事件 (由逻辑层发出)
   void subscribeHandler(String event, String params) {
-    // Hera 的视图层统一使用 HeraJSBridge
     final js = "window.HeraJSBridge && window.HeraJSBridge.subscribeHandler && window.HeraJSBridge.subscribeHandler('$event', $params)";
     
     if (!_isReady) {
@@ -253,7 +271,6 @@ class PaminaPageState extends State<PaminaPage> {
     _controller.runJavaScript(js);
   }
 
-  /// 向视图层发送监听回调 (API 回调)
   void invokeCallbackHandler(String callbackId, String result) {
     final js =
         "window.HeraJSBridge && window.HeraJSBridge.invokeCallbackHandler && window.HeraJSBridge.invokeCallbackHandler('$callbackId', $result)";
@@ -269,11 +286,11 @@ class PaminaPageState extends State<PaminaPage> {
     _controller.runJavaScript(js);
   }
 
-  /// 更新导航栏配置
   void updateNavigationBar({
     String? title,
     String? backgroundColor,
     String? textColor,
+    bool? isLoading,
     bool? showBack,
     VoidCallback? onBack,
   }) {
@@ -282,6 +299,7 @@ class PaminaPageState extends State<PaminaPage> {
       if (title != null) _navBarTitle = title;
       if (backgroundColor != null) _navBarBgColor = backgroundColor;
       if (textColor != null) _navBarTextColor = textColor;
+      if (isLoading != null) _navBarLoading = isLoading;
       if (showBack != null) _showBack = showBack;
       if (onBack != null) _onBack = onBack;
     });
@@ -296,15 +314,48 @@ class PaminaPageState extends State<PaminaPage> {
         backgroundColor: _navBarBgColor,
         textColor: _navBarTextColor,
         showBack: _showBack,
+        isLoading: _navBarLoading,
         onBack: _onBack,
-        onClose: widget.onClose,
       ),
-      body: WebViewWidget(
-        controller: _controller,
-        gestureRecognizers: {
-          Factory<EagerGestureRecognizer>(() => EagerGestureRecognizer()),
-        },
-      ),
+      body: widget.enablePullDownRefresh
+          ? RefreshIndicator(
+              key: _refreshIndicatorKey,
+              onRefresh: () async {
+                if (_pullDownRefreshCompleter != null) return;
+                _pullDownRefreshCompleter = Completer<void>();
+                if (widget.onPublish != null) {
+                  widget.onPublish!('onPullDownRefresh', '{}', widget.viewId);
+                }
+                return _pullDownRefreshCompleter!.future;
+              },
+              child: Stack(
+                children: [
+                  ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      SizedBox(
+                        height: MediaQuery.of(context).size.height -
+                            AppBar().preferredSize.height -
+                            MediaQuery.of(context).padding.top,
+                        child: WebViewWidget(
+                          controller: _controller,
+                          gestureRecognizers: {
+                            Factory<VerticalDragGestureRecognizer>(() => VerticalDragGestureRecognizer()),
+                            Factory<HorizontalDragGestureRecognizer>(() => HorizontalDragGestureRecognizer()),
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            )
+          : WebViewWidget(
+              controller: _controller,
+              gestureRecognizers: {
+                Factory<EagerGestureRecognizer>(() => EagerGestureRecognizer()),
+              },
+            ),
     );
   }
 }
