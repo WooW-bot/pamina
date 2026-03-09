@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Pamina requires camera access for scanning QR codes and barcodes.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Pamina requires access to your photo library to scan QR codes from photos.</string>
 </dict>
 </plist>

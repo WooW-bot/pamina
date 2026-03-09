@@ -162,6 +162,16 @@ class PaminaServiceState extends State<PaminaService> {
       }
     };
   }
+  if (typeof HeraJSCore === 'undefined') {
+    window.HeraJSCore = {
+      invokeHandler: function(c, p, callbackId) {
+        window.webkit.messageHandlers.invokeHandler.postMessage({C: c, paramsString: p, callbackId: callbackId});
+      },
+      publishHandler: function(e, p, viewIds) {
+        window.webkit.messageHandlers.publishHandler.postMessage({event: e, paramsString: p, webviewIds: viewIds});
+      }
+    };
+  }
 })();
 </script>
 """;

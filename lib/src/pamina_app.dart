@@ -12,6 +12,8 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'widgets/pamina_ui_widgets.dart';
 
 /// Pamina 容器 (App)
@@ -97,6 +99,15 @@ class _PaminaAppState extends State<PaminaApp> {
   @override
   void initState() {
     super.initState();
+    _initialSetup();
+  }
+
+  Future<void> _initialSetup() async {
+    // 1. 启动时先清理内部资源目录，保持沙箱整洁
+    // 先执行清理，再执行同步，避免两个任务同时操作 source 目录导致 OS Error 39 (Directory not empty)
+    await StorageUtil.clearMiniAppInternalResourceDir(widget.appId);
+    
+    // 2. 然后再执行小程序资源同步
     _syncMiniApp();
   }
 
@@ -371,6 +382,55 @@ class _PaminaAppState extends State<PaminaApp> {
         break;
       case 'getNetworkType':
         _handleGetNetworkType(callbackId, fromViewId);
+        break;
+      case 'makePhoneCall':
+        _handleMakePhoneCall(params, callbackId, fromViewId);
+        break;
+      case 'reportIDKey':
+        _handleReportIDKey(params, callbackId, fromViewId);
+        break;
+      case 'scanCode':
+        _handleScanCode(params, callbackId, fromViewId);
+        break;
+      case 'request':
+        _handleRequest(params, callbackId, fromViewId);
+        break;
+      case 'chooseImage':
+        _handleChooseImage(params, callbackId, fromViewId);
+        break;
+      case 'uploadFile':
+        _handleUploadFile(params, callbackId, fromViewId);
+        break;
+      case 'downloadFile':
+        _handleDownloadFile(params, callbackId, fromViewId);
+        break;
+      case 'saveFile':
+        _handleSaveFile(params, callbackId, fromViewId);
+        break;
+      case 'setStorage':
+      case 'setStorageAsync':
+      case 'setStorageSync':
+        _handleSetStorage(params, callbackId, fromViewId, isSync: event.endsWith('Sync'));
+        break;
+      case 'getStorage':
+      case 'getStorageAsync':
+      case 'getStorageSync':
+        _handleGetStorage(params, callbackId, fromViewId, isSync: event.endsWith('Sync'));
+        break;
+      case 'removeStorage':
+      case 'removeStorageAsync':
+      case 'removeStorageSync':
+        _handleRemoveStorage(params, callbackId, fromViewId, isSync: event.endsWith('Sync'));
+        break;
+      case 'clearStorage':
+      case 'clearStorageAsync':
+      case 'clearStorageSync':
+        _handleClearStorage(params, callbackId, fromViewId, isSync: event.endsWith('Sync'));
+        break;
+      case 'getStorageInfo':
+      case 'getStorageInfoAsync':
+      case 'getStorageInfoSync':
+        _handleGetStorageInfo(callbackId, fromViewId, isSync: event.endsWith('Sync'));
         break;
       default:
         PaminaLog.w('Unhandled API: $event', tag: 'PaminaApp');
@@ -720,6 +780,480 @@ class _PaminaAppState extends State<PaminaApp> {
     } catch (e) {
       PaminaLog.e('Handle getNetworkType error', error: e, tag: 'PaminaApp');
       _handleInvokeCallback('getNetworkType', {'errMsg': 'getNetworkType:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  void _handleMakePhoneCall(String params, String? callbackId, int? fromViewId) async {
+    try {
+      final Map<String, dynamic> data = json.decode(params);
+      final String phoneNumber = data['phoneNumber']?.toString() ?? '';
+      
+      if (phoneNumber.isEmpty) {
+        _handleInvokeCallback('makePhoneCall', {'errMsg': 'makePhoneCall:fail invalid phoneNumber'}, callbackId, fromViewId: fromViewId);
+        return;
+      }
+
+      final Uri url = Uri.parse('tel:$phoneNumber');
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url);
+        _handleInvokeCallback('makePhoneCall', {}, callbackId, fromViewId: fromViewId);
+      } else {
+        _handleInvokeCallback('makePhoneCall', {'errMsg': 'makePhoneCall:fail cannot launch tel protocol'}, callbackId, fromViewId: fromViewId);
+      }
+    } catch (e) {
+      PaminaLog.e('Handle makePhoneCall error', error: e, tag: 'PaminaApp');
+      _handleInvokeCallback('makePhoneCall', {'errMsg': 'makePhoneCall:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  void _handleReportIDKey(String params, String? callbackId, int? fromViewId) {
+    // Stub for analytics: just log & return ok
+    PaminaLog.d('Analytics reportIDKey: $params', tag: 'PaminaApp');
+    _handleInvokeCallback('reportIDKey', {}, callbackId, fromViewId: fromViewId);
+  }
+
+  void _handleScanCode(String params, String? callbackId, int? fromViewId) async {
+    try {
+      PaminaLog.i('Opening scanner...', tag: 'PaminaApp');
+      final result = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(builder: (context) => const PaminaScanner()),
+      );
+
+      if (result != null) {
+        _handleInvokeCallback('scanCode', {
+          'result': result,
+          'scanType': 'QR_CODE', // Default for now
+          'charSet': 'UTF-8',
+          'errMsg': 'scanCode:ok'
+        }, callbackId, fromViewId: fromViewId);
+      } else {
+        _handleInvokeCallback('scanCode', {'errMsg': 'scanCode:fail cancel'}, callbackId, fromViewId: fromViewId);
+      }
+    } catch (e) {
+      PaminaLog.e('Handle scanCode error', error: e, tag: 'PaminaApp');
+      _handleInvokeCallback('scanCode', {'errMsg': 'scanCode:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  void _handleRequest(String params, String? callbackId, int? fromViewId) async {
+    try {
+      final Map<String, dynamic> data = json.decode(params);
+      final String url = data['url']?.toString() ?? '';
+      final String method = (data['method']?.toString() ?? 'GET').toUpperCase();
+      final dynamic body = data['data'];
+      final Map<String, String> headers = {};
+      if (data['header'] is Map) {
+        (data['header'] as Map).forEach((key, value) {
+          headers[key.toString()] = value.toString();
+        });
+      }
+
+      PaminaLog.i('HTTP Request: $method $url', tag: 'PaminaApp');
+
+      http.Response response;
+      final uri = Uri.parse(url);
+
+      switch (method) {
+        case 'POST':
+          response = await http.post(uri, headers: headers, body: body is String ? body : json.encode(body));
+          break;
+        case 'PUT':
+          response = await http.put(uri, headers: headers, body: body is String ? body : json.encode(body));
+          break;
+        case 'DELETE':
+          response = await http.delete(uri, headers: headers, body: body is String ? body : json.encode(body));
+          break;
+        case 'GET':
+        default:
+          // For GET, standard wx.request might append data to query params, 
+          // but usually it's already in the URL provided.
+          response = await http.get(uri, headers: headers);
+          break;
+      }
+
+      // WeChat returns data as either String or Map depending on Content-Type
+      dynamic responseData = response.body;
+      final contentType = response.headers['content-type'] ?? '';
+      if (contentType.contains('application/json')) {
+        try {
+          responseData = json.decode(response.body);
+        } catch (e) {
+          // keep as string if decode fails
+        }
+      }
+
+      _handleInvokeCallback('request', {
+        'data': responseData,
+        'statusCode': response.statusCode,
+        'header': response.headers,
+      }, callbackId, fromViewId: fromViewId);
+    } catch (e) {
+      PaminaLog.e('Handle request error', error: e, tag: 'PaminaApp');
+      _handleInvokeCallback('request', {'errMsg': 'request:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  void _handleChooseImage(String params, String? callbackId, int? fromViewId) async {
+    try {
+      final Map<String, dynamic> data = json.decode(params);
+      final int count = data['count'] is int ? data['count'] : 9;
+      final List sourceType = data['sourceType'] ?? ['album', 'camera'];
+
+      PaminaLog.i('Choosing image: count=$count, sourceType=$sourceType', tag: 'PaminaApp');
+
+      final picker = ImagePicker();
+      final List<XFile> files = [];
+
+      // If both album and camera are allowed, we might need to show an action sheet first 
+      // or rely on image_picker's behavior if it supports multiple sources.
+      // But standard image_picker requires picking one source.
+      
+      String? selectedSource;
+      if (sourceType.length > 1) {
+        // Show action sheet to choose source
+        final index = await showModalBottomSheet<int>(
+          context: context,
+          backgroundColor: Colors.transparent,
+          builder: (context) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(12),
+                  topRight: Radius.circular(12),
+                ),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    InkWell(
+                      onTap: () => Navigator.pop(context, 0),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        alignment: Alignment.center,
+                        child: const Text('从相册选择', style: TextStyle(fontSize: 18)),
+                      ),
+                    ),
+                    const Divider(height: 0.5),
+                    InkWell(
+                      onTap: () => Navigator.pop(context, 1),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        alignment: Alignment.center,
+                        child: const Text('拍照', style: TextStyle(fontSize: 18)),
+                      ),
+                    ),
+                    Container(height: 8, color: Colors.black12.withOpacity(0.05)),
+                    InkWell(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        alignment: Alignment.center,
+                        child: const Text('取消', style: TextStyle(fontSize: 18)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+
+        if (index == 0) selectedSource = 'album';
+        else if (index == 1) selectedSource = 'camera';
+        else {
+          _handleInvokeCallback('chooseImage', {'errMsg': 'chooseImage:fail cancel'}, callbackId, fromViewId: fromViewId);
+          return;
+        }
+      } else {
+        selectedSource = sourceType.first.toString();
+      }
+
+      if (selectedSource == 'camera') {
+        final XFile? photo = await picker.pickImage(source: ImageSource.camera);
+        if (photo != null) files.add(photo);
+      } else {
+        if (count > 1) {
+          // 明确传递 limit 参数，有助于某些平台弹出支持多选的 UI
+          files.addAll(await picker.pickMultiImage(limit: count));
+          PaminaLog.i('PickMultiImage returned ${files.length} files', tag: 'PaminaApp');
+          // 兜底截断
+          if (files.length > count) {
+            files.removeRange(count, files.length);
+          }
+        } else {
+          final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+          if (image != null) files.add(image);
+        }
+      }
+
+      if (files.isEmpty) {
+        _handleInvokeCallback('chooseImage', {'errMsg': 'chooseImage:fail cancel'}, callbackId, fromViewId: fromViewId);
+        return;
+      }
+
+      final List<String> tempFilePaths = [];
+      final List<Map<String, dynamic>> tempFiles = [];
+
+      final resourceDir = await StorageUtil.getMiniAppInternalResourceDir(widget.appId);
+      final random = DateTime.now().microsecondsSinceEpoch;
+
+      for (int i = 0; i < files.length; i++) {
+        final file = files[i];
+        // 将文件拷贝到 source 目录下的受控资源目录中，以绕过 WebView 同源策略限制
+        // 使用微秒戳 + 循环索引 + 原始名称后缀，确保在高速循环中文件名绝对唯一
+        final extension = p.extension(file.path);
+        final fileName = 'res_${random}_${i}${extension}';
+        final targetFile = File(p.join(resourceDir.path, fileName));
+        await File(file.path).copy(targetFile.path);
+
+        // 使用 Uri.file 会自动处理中文字符等特殊路径的 URL 编码
+        final path = Uri.file(targetFile.path).toString();
+        final size = await targetFile.length();
+        tempFilePaths.add(path);
+        tempFiles.add({
+          'path': path,
+          'size': size,
+        });
+      }
+
+      PaminaLog.i('ChooseImage results: $tempFilePaths', tag: 'PaminaApp');
+
+      _handleInvokeCallback('chooseImage', {
+        'tempFilePaths': tempFilePaths,
+        'tempFiles': tempFiles,
+      }, callbackId, fromViewId: fromViewId);
+    } catch (e) {
+      PaminaLog.e('Handle chooseImage error', error: e, tag: 'PaminaApp');
+      _handleInvokeCallback('chooseImage', {'errMsg': 'chooseImage:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  void _handleUploadFile(String params, String? callbackId, int? fromViewId) async {
+    try {
+      final Map<String, dynamic> data = json.decode(params);
+      final String url = data['url']?.toString() ?? '';
+      String filePath = data['filePath']?.toString() ?? '';
+      
+      // 处理 file:// 协议头，http.MultipartFile.fromPath 需要原始路径
+      if (filePath.startsWith('file://')) {
+        filePath = filePath.replaceFirst('file://', '');
+      }
+      
+      final String name = data['name']?.toString() ?? 'file';
+      final Map<String, String> headers = {};
+      if (data['header'] is Map) {
+        (data['header'] as Map).forEach((key, value) {
+          headers[key.toString()] = value.toString();
+        });
+      }
+      final Map<String, String> formData = {};
+      if (data['formData'] is Map) {
+        (data['formData'] as Map).forEach((key, value) {
+          formData[key.toString()] = value.toString();
+        });
+      }
+
+      PaminaLog.i('HTTP Upload: $url, file: $filePath', tag: 'PaminaApp');
+
+      final uri = Uri.parse(url);
+      final request = http.MultipartRequest('POST', uri);
+      
+      request.headers.addAll(headers);
+      request.fields.addAll(formData);
+      
+      final file = await http.MultipartFile.fromPath(name, filePath);
+      request.files.add(file);
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      PaminaLog.i('Upload response: ${response.statusCode}', tag: 'PaminaApp');
+
+      _handleInvokeCallback('uploadFile', {
+        'data': response.body,
+        'statusCode': response.statusCode,
+      }, callbackId, fromViewId: fromViewId);
+    } catch (e) {
+      PaminaLog.e('Handle uploadFile error', error: e, tag: 'PaminaApp');
+      _handleInvokeCallback('uploadFile', {'errMsg': 'uploadFile:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  void _handleDownloadFile(String params, String? callbackId, int? fromViewId) async {
+    try {
+      final Map<String, dynamic> data = json.decode(params);
+      final String url = data['url']?.toString() ?? '';
+      final Map<String, String> headers = {};
+      if (data['header'] is Map) {
+        (data['header'] as Map).forEach((key, value) {
+          headers[key.toString()] = value.toString();
+        });
+      }
+
+      PaminaLog.i('HTTP Download: $url', tag: 'PaminaApp');
+
+      final response = await http.get(Uri.parse(url), headers: headers);
+      if (response.statusCode == 200) {
+        final resourceDir = await StorageUtil.getMiniAppInternalResourceDir(widget.appId);
+        final random = DateTime.now().microsecondsSinceEpoch;
+        final extension = p.extension(Uri.parse(url).path);
+        final fileName = 'dl_${random}${extension}';
+        final file = File(p.join(resourceDir.path, fileName));
+        await file.writeAsBytes(response.bodyBytes);
+
+        PaminaLog.i('Downloaded file saved to internal resource: ${file.path}', tag: 'PaminaApp');
+
+        _handleInvokeCallback('downloadFile', {
+          'tempFilePath': Uri.file(file.path).toString(),
+          'statusCode': response.statusCode,
+        }, callbackId, fromViewId: fromViewId);
+      } else {
+        _handleInvokeCallback('downloadFile', {
+          'errMsg': 'downloadFile:fail status code ${response.statusCode}',
+          'statusCode': response.statusCode,
+        }, callbackId, fromViewId: fromViewId);
+      }
+    } catch (e) {
+      PaminaLog.e('Handle downloadFile error', error: e, tag: 'PaminaApp');
+      _handleInvokeCallback('downloadFile', {'errMsg': 'downloadFile:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  void _handleSaveFile(String params, String? callbackId, int? fromViewId) async {
+    try {
+      final Map<String, dynamic> data = json.decode(params);
+      String tempFilePath = data['tempFilePath']?.toString() ?? '';
+
+      if (tempFilePath.startsWith('file://')) {
+        tempFilePath = Uri.parse(tempFilePath).toFilePath();
+      }
+
+      final file = File(tempFilePath);
+      if (!file.existsSync()) {
+        _handleInvokeCallback('saveFile', {'errMsg': 'saveFile:fail file not found'}, callbackId, fromViewId: fromViewId);
+        return;
+      }
+
+      final storeDir = await StorageUtil.getMiniAppStoreDir(widget.appId);
+      final fileName = 'store_${DateTime.now().microsecondsSinceEpoch}${p.extension(tempFilePath)}';
+      final targetPath = p.join(storeDir.path, fileName);
+
+      await file.copy(targetPath);
+
+      _handleInvokeCallback('saveFile', {
+        'savedFilePath': Uri.file(targetPath).toString(),
+      }, callbackId, fromViewId: fromViewId);
+    } catch (e) {
+      PaminaLog.e('Handle saveFile error', error: e, tag: 'PaminaApp');
+      _handleInvokeCallback('saveFile', {'errMsg': 'saveFile:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  Future<Map<String, dynamic>> _readStorage() async {
+    try {
+      final file = await StorageUtil.getMiniAppStorageFile(widget.appId);
+      if (file.existsSync()) {
+        final content = await file.readAsString();
+        return json.decode(content) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      PaminaLog.e('Read storage error', error: e, tag: 'PaminaApp');
+    }
+    return {};
+  }
+
+  Future<void> _writeStorage(Map<String, dynamic> data) async {
+    try {
+      final file = await StorageUtil.getMiniAppStorageFile(widget.appId);
+      await file.writeAsString(json.encode(data));
+    } catch (e) {
+      PaminaLog.e('Write storage error', error: e, tag: 'PaminaApp');
+    }
+  }
+
+  void _handleSetStorage(String params, String? callbackId, int? fromViewId, {bool isSync = false}) async {
+    final eventName = isSync ? 'setStorageSync' : 'setStorage';
+    try {
+      final Map<String, dynamic> data = json.decode(params);
+      final String key = data['key']?.toString() ?? '';
+      final dynamic value = data['data'];
+
+      final storage = await _readStorage();
+      storage[key] = value;
+      await _writeStorage(storage);
+
+      _handleInvokeCallback(eventName, {'errMsg': '$eventName:ok'}, callbackId, fromViewId: fromViewId);
+    } catch (e) {
+      _handleInvokeCallback(eventName, {'errMsg': '$eventName:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  void _handleGetStorage(String params, String? callbackId, int? fromViewId, {bool isSync = false}) async {
+    final eventName = isSync ? 'getStorageSync' : 'getStorage';
+    try {
+      final Map<String, dynamic> data = json.decode(params);
+      final String key = data['key']?.toString() ?? '';
+
+      final storage = await _readStorage();
+      final dynamic value = storage[key];
+
+      _handleInvokeCallback(eventName, {
+        'data': value,
+        'errMsg': '$eventName:ok'
+      }, callbackId, fromViewId: fromViewId);
+    } catch (e) {
+      _handleInvokeCallback(eventName, {'errMsg': '$eventName:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  void _handleRemoveStorage(String params, String? callbackId, int? fromViewId, {bool isSync = false}) async {
+    final eventName = isSync ? 'removeStorageSync' : 'removeStorage';
+    try {
+      final Map<String, dynamic> data = json.decode(params);
+      final String key = data['key']?.toString() ?? '';
+
+      final storage = await _readStorage();
+      storage.remove(key);
+      await _writeStorage(storage);
+
+      _handleInvokeCallback(eventName, {'errMsg': '$eventName:ok'}, callbackId, fromViewId: fromViewId);
+    } catch (e) {
+      _handleInvokeCallback(eventName, {'errMsg': '$eventName:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  void _handleClearStorage(String params, String? callbackId, int? fromViewId, {bool isSync = false}) async {
+    final eventName = isSync ? 'clearStorageSync' : 'clearStorage';
+    try {
+      await _writeStorage({});
+      _handleInvokeCallback(eventName, {'errMsg': '$eventName:ok'}, callbackId, fromViewId: fromViewId);
+    } catch (e) {
+      _handleInvokeCallback(eventName, {'errMsg': '$eventName:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  void _handleGetStorageInfo(String? callbackId, int? fromViewId, {bool isSync = false}) async {
+    final eventName = isSync ? 'getStorageInfoSync' : 'getStorageInfo';
+    try {
+      final storage = await _readStorage();
+      final keys = storage.keys.toList();
+      final currentSize = json.encode(storage).length; // Rough estimate in bytes
+
+      _handleInvokeCallback(eventName, {
+        'keys': keys,
+        'currentSize': (currentSize / 1024).round(), // in KB
+        'limitSize': 10240, // 10MB limit
+        'errMsg': '$eventName:ok'
+      }, callbackId, fromViewId: fromViewId);
+    } catch (e) {
+      _handleInvokeCallback(eventName, {'errMsg': '$eventName:fail $e'}, callbackId, fromViewId: fromViewId);
     }
   }
 

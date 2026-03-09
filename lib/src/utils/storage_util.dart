@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'pamina_log.dart';
 
 /// 小程序存储路径管理工具类
 ///
@@ -81,6 +82,16 @@ class StorageUtil {
     return dir;
   }
 
+  /// 获取指定小程序内部受控的资源目录（位于 source 目录下，用于规避 WebView 跨域限制）
+  static Future<Directory> getMiniAppInternalResourceDir(String appId) async {
+    final sourceDir = await getMiniAppSourceDir(appId);
+    final dir = Directory(p.join(sourceDir.path, '.pamina_res'));
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
+    return dir;
+  }
+
   /// 清除指定小程序的临时目录文件
   static Future<void> clearAppTempDir(String appId) async {
     final tempDir = await getMiniAppTempDir(appId);
@@ -92,6 +103,25 @@ class StorageUtil {
         }
       }
     }
+  }
+
+  /// 清除指定小程序的受控资源目录文件
+  static Future<void> clearMiniAppInternalResourceDir(String appId) async {
+    try {
+      final resDir = await getMiniAppInternalResourceDir(appId);
+      if (resDir.existsSync()) {
+        await resDir.delete(recursive: true);
+        await resDir.create(recursive: true);
+      }
+    } catch (e) {
+      PaminaLog.e('Clear internal resource dir error', error: e, tag: 'StorageUtil');
+    }
+  }
+
+  /// 获取指定小程序的 KV 存储文件路径
+  static Future<File> getMiniAppStorageFile(String appId) async {
+    final storeDir = await getMiniAppStoreDir(appId);
+    return File(p.join(storeDir.path, 'storage.json'));
   }
 
   /// 检查框架（引擎）文件是否存在且不为空

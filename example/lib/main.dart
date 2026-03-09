@@ -35,8 +35,8 @@ class _MyAppState extends State<MyApp> {
             (context) => Scaffold(
               appBar: AppBar(title: const Text('Plugin example app')),
               body: Center(
-                child: GestureDetector(
-                  onTap: () {
+                child: TextButton(
+                  onPressed: () {
                     final String userId = "123"; // 标识宿主App业务用户id
                     final String appId = "demoapp"; // 小程序的id
                     final String appPath = ""; // 小程序的本地存储路径
@@ -47,7 +47,7 @@ class _MyAppState extends State<MyApp> {
                       appPath: appPath,
                     );
                   },
-                  child: const Text('Open Mini App'),
+                  child: const Text('点击打开小程序Demo'),
                 ),
               ),
             ),
