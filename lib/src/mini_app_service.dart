@@ -6,6 +6,7 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:path/path.dart' as p;
 import 'utils/mini_app_log.dart';
 
+
 /// 小程序逻辑层服务组件 (AppService)
 ///
 /// 该组件是一个不可见的 WebView，负责运行小程序的逻辑层 JS (service.js)。
@@ -149,7 +150,7 @@ class MiniAppServiceState extends State<MiniAppService> {
     if (serviceFile.existsSync()) {
       String content = await serviceFile.readAsString();
       
-      // 核心修复：不再进行全量内联，而是注入一个动态 Shim 到 HTML 头部
+      // 核心修复：注入一个动态 Shim 到 HTML 头部
       const shim = """
 <script id="hera-flutter-shim">
 (function() {
@@ -167,7 +168,7 @@ class MiniAppServiceState extends State<MiniAppService> {
       // 插入到 <head> 标签之后
       content = content.replaceFirst('<head>', '<head>$shim');
 
-      MiniAppLog.i('Loading service.html with native file access enabled.', tag: 'Service');
+      MiniAppLog.i('Loading service.html with symlink support.', tag: 'Service');
 
       _controller.loadHtmlString(
         content,
@@ -175,6 +176,7 @@ class MiniAppServiceState extends State<MiniAppService> {
         // 同时也方便访问 script/config.js 等本地资源
         baseUrl: widget.sourcePath.endsWith('/') ? 'file://${widget.sourcePath}' : 'file://${widget.sourcePath}/',
       );
+
     } else {
       MiniAppLog.e('入口文件 service.html 不存在: ${serviceFile.path}', tag: 'Service');
     }

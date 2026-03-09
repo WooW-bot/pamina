@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:path/path.dart' as p;
 import 'utils/mini_app_log.dart';
+
 
 /// 小程序视图层组件 (Page View)
 /// 
@@ -52,7 +55,7 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
   void _initController() {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0x00000000))
+      ..setBackgroundColor(Colors.white)
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (String url) {
@@ -60,6 +63,15 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
           },
           onPageFinished: (String url) {
             MiniAppLog.i('Page layer (${widget.path}) loaded.', tag: 'PageView');
+            // 核心修复：强制注入 CSS 允许页面滚动，并确保 -webkit-overflow-scrolling 为 touch
+            // 许多小程序框架在 body/html 上禁用了滚动，通过注入覆盖这些样式。
+            _controller.runJavaScript("""
+              (function() {
+                var style = document.createElement('style');
+                style.innerHTML = 'html, body { overflow: auto !important; height: auto !important; -webkit-overflow-scrolling: touch !important; }';
+                document.head.appendChild(style);
+              })();
+            """);
           },
         ),
       );
@@ -172,7 +184,7 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
     if (pageFile.existsSync()) {
       String content = await pageFile.readAsString();
 
-      // 核心修复：不再进行全量内联，而是注入一个动态 Shim 到 HTML 头部
+      // 核心修复：注入动态 Shim
       const shim = """
 <script id="hera-flutter-shim">
 (function() {
@@ -190,13 +202,14 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
       // 插入到 <head> 标签之后
       content = content.replaceFirst('<head>', '<head>$shim');
 
-      MiniAppLog.i('PageView loading ${widget.path} with native file access enabled.', tag: 'PageView');
+      MiniAppLog.i('PageView loading ${widget.path} with symlink support.', tag: 'PageView');
 
       _controller.loadHtmlString(
         content,
         // baseUrl 改为源码根目录，统一路径计算逻辑
         baseUrl: widget.sourcePath.endsWith('/') ? 'file://${widget.sourcePath}' : 'file://${widget.sourcePath}/',
       );
+
     } else {
       MiniAppLog.e('页面文件不存在: ${pageFile.path}', tag: 'PageView');
     }
@@ -229,6 +242,11 @@ class MiniAppPageViewState extends State<MiniAppPageView> {
 
   @override
   Widget build(BuildContext context) {
-    return WebViewWidget(controller: _controller);
+    return WebViewWidget(
+      controller: _controller,
+      gestureRecognizers: {
+        Factory<EagerGestureRecognizer>(() => EagerGestureRecognizer()),
+      },
+    );
   }
 }

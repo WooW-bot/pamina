@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'sync/mini_app_manager.dart';
 import 'utils/storage_util.dart';
 import 'mini_app_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'mini_app_page_view.dart';
 import 'utils/mini_app_log.dart';
 import 'dart:io';
@@ -56,6 +57,15 @@ class _MiniAppPageState extends State<MiniAppPage> {
 
   /// 所有已初始化的 Tab 视图 ID 列表
   final List<int> _tabViewIds = [];
+
+  /// 非 Tab 页面栈 (存储 viewId)
+  final List<int> _navigationStack = [];
+
+  /// 下一个可用的 viewId (从 Tab 数量 + 1 开始)
+  int _nextViewId = 1;
+
+  /// 小程序所有页面路径列表 (从 app.json 解析)
+  final List<String> _allPages = [];
 
   /// 已正式加载过的 Tab ID (Lazy Loading)
   final Set<int> _initializedTabViewIds = {};
@@ -289,6 +299,21 @@ class _MiniAppPageState extends State<MiniAppPage> {
         });
         _handleInvokeCallback(event, {}, callbackId, fromViewId: fromViewId);
         break;
+      case 'navigateTo':
+        _handleNavigateTo(params, callbackId, fromViewId);
+        break;
+      case 'redirectTo':
+        _handleRedirectTo(params, callbackId, fromViewId);
+        break;
+      case 'navigateBack':
+        _handleNavigateBack(params, callbackId, fromViewId);
+        break;
+      case 'switchTab':
+        _handleSwitchTab(params, callbackId, fromViewId);
+        break;
+      case 'openLink':
+        _handleOpenLink(params, callbackId, fromViewId);
+        break;
       default:
         MiniAppLog.w('Unhandled API: $event', tag: 'Page');
     }
@@ -340,6 +365,191 @@ class _MiniAppPageState extends State<MiniAppPage> {
     );
   }
 
+  void _handleNavigateTo(String params, String? callbackId, int? fromViewId) {
+    final Map<String, dynamic> data = json.decode(params);
+    String url = data['url']?.toString() ?? '';
+    final path = _normalizeUrl(url, fromViewId: fromViewId);
+
+    final int viewId = _nextViewId++;
+    _viewIdToPath[viewId] = path;
+    _viewIdToOpenType[viewId] = 'navigateTo';
+    _pageKeys[viewId] = GlobalKey<MiniAppPageViewState>();
+
+    _applyPageConfig(path);
+
+    setState(() {
+      _navigationStack.add(viewId);
+      _activePageId = viewId;
+    });
+
+    _handleInvokeCallback('navigateTo', {}, callbackId, fromViewId: fromViewId);
+
+    // 发送路由事件给 Service (使用原始 path 以支持框架内部解析)
+    _serviceKey.currentState?.onAppRoute('navigateTo', path, viewId);
+  }
+
+  void _handleRedirectTo(String params, String? callbackId, int? fromViewId) {
+    final Map<String, dynamic> data = json.decode(params);
+    String url = data['url']?.toString() ?? '';
+    final path = _normalizeUrl(url, fromViewId: fromViewId);
+
+    if (_navigationStack.isNotEmpty) {
+      final int oldViewId = _navigationStack.removeLast();
+      _pageKeys.remove(oldViewId);
+      _viewIdToPath.remove(oldViewId);
+      _viewIdToOpenType.remove(oldViewId);
+      _readyViewIds.remove(oldViewId);
+      _pageMessageBuffer.remove(oldViewId);
+    }
+
+    final int viewId = _nextViewId++;
+    _viewIdToPath[viewId] = path;
+    _viewIdToOpenType[viewId] = 'redirectTo';
+    _pageKeys[viewId] = GlobalKey<MiniAppPageViewState>();
+
+    _applyPageConfig(path);
+
+    setState(() {
+      _navigationStack.add(viewId);
+      _activePageId = viewId;
+    });
+
+    _handleInvokeCallback('redirectTo', {}, callbackId, fromViewId: fromViewId);
+
+    // 发送路由事件给 Service
+    _serviceKey.currentState?.onAppRoute('redirectTo', path, viewId);
+  }
+
+  void _handleNavigateBack(String params, String? callbackId, int? fromViewId) {
+    if (_navigationStack.isEmpty) return;
+
+    final int delta = json.decode(params)['delta'] ?? 1;
+    for (int i = 0; i < delta && _navigationStack.isNotEmpty; i++) {
+      final int viewId = _navigationStack.removeLast();
+      _pageKeys.remove(viewId);
+      _viewIdToPath.remove(viewId);
+      _viewIdToOpenType.remove(viewId);
+      _readyViewIds.remove(viewId);
+      _pageMessageBuffer.remove(viewId);
+    }
+
+    // 确定新的活跃页面 ID (栈顶或当前 Tab)
+    final int nextActiveId =
+        _navigationStack.isNotEmpty
+            ? _navigationStack.last
+            : (_tabViewIds.isNotEmpty ? _tabViewIds[_currentTabIndex] : 1);
+
+    final String nextPath = _viewIdToPath[nextActiveId] ?? '';
+    _applyPageConfig(nextPath);
+
+    setState(() {
+      _activePageId = nextActiveId;
+    });
+
+    _handleInvokeCallback(
+      'navigateBack',
+      {},
+      callbackId,
+      fromViewId: fromViewId,
+    );
+
+    // 发送路由事件给 Service (通知当前真正活跃的页面)
+    _serviceKey.currentState?.onAppRoute('navigateBack', nextPath, nextActiveId);
+    _serviceKey.currentState?.onAppRouteDone(
+      'navigateBack',
+      nextPath,
+      nextActiveId,
+    );
+  }
+
+  void _handleSwitchTab(String params, String? callbackId, int? fromViewId) {
+    final Map<String, dynamic> data = json.decode(params);
+    String url = data['url']?.toString() ?? '';
+    final path = _normalizeUrl(url, fromViewId: fromViewId);
+
+    // 清空堆栈并清理关联状态
+    for (final viewId in _navigationStack) {
+      _pageKeys.remove(viewId);
+      _viewIdToPath.remove(viewId);
+      _viewIdToOpenType.remove(viewId);
+      _readyViewIds.remove(viewId);
+      _pageMessageBuffer.remove(viewId);
+    }
+    _navigationStack.clear();
+
+    // 查找目标 Tab 索引
+    final List list = _tabBarConfig?['list'] ?? [];
+    int targetIndex = -1;
+    for (int i = 0; i < list.length; i++) {
+      if (list[i]['pagePath'] == path) {
+        targetIndex = i;
+        break;
+      }
+    }
+
+    if (targetIndex != -1) {
+      _onTabSwitch(targetIndex);
+    }
+
+    _handleInvokeCallback('switchTab', {}, callbackId, fromViewId: fromViewId);
+  }
+
+  void _handleOpenLink(String params, String? callbackId, int? fromViewId) async {
+    final Map<String, dynamic> data = json.decode(params);
+    final String urlString = data['url']?.toString() ?? '';
+    if (urlString.isEmpty) {
+      _handleInvokeCallback('openLink', {'errMsg': 'openLink:fail url is empty'}, callbackId, fromViewId: fromViewId);
+      return;
+    }
+
+    final Uri url = Uri.parse(urlString);
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+        _handleInvokeCallback('openLink', {}, callbackId, fromViewId: fromViewId);
+      } else {
+        _handleInvokeCallback('openLink', {'errMsg': 'openLink:fail cannot launch $urlString'}, callbackId, fromViewId: fromViewId);
+      }
+    } catch (e) {
+      _handleInvokeCallback('openLink', {'errMsg': 'openLink:fail $e'}, callbackId, fromViewId: fromViewId);
+    }
+  }
+
+  /// 规范化页面路径 (处理相对路径和 app.json 匹配)
+  String _normalizeUrl(String url, {int? fromViewId}) {
+    // 1. 去掉查询参数和 .html 后缀
+    String path = url.split('?').first.replaceAll('.html', '');
+    if (path.startsWith('/')) path = path.substring(1);
+
+    // 2. 如果已经在 _allPages 或者是 Tab 路径，直接返回
+    if (_allPages.contains(path) || _viewIdToPath.values.contains(path)) {
+      return path;
+    }
+
+    // 3. 尝试相对路径解析
+    String fromPath = '';
+    if (fromViewId != null) {
+      fromPath = _viewIdToPath[fromViewId] ?? '';
+    } else {
+      fromPath = _viewIdToPath[_activePageId] ?? '';
+    }
+
+    if (fromPath.isNotEmpty) {
+      final baseUrl = p.dirname(fromPath);
+      final resolved = p.normalize(p.join(baseUrl, path));
+      final sanitized =
+          resolved.startsWith('/') ? resolved.substring(1) : resolved;
+      if (_allPages.contains(sanitized)) return sanitized;
+    }
+
+    // 4. 尝试后缀匹配 (兜底方案，例如 pages/view/view 匹配 page/component/pages/view/view)
+    for (final p in _allPages) {
+      if (p.endsWith(path)) return p;
+    }
+
+    return path;
+  }
+
   /// 处理逻辑层就绪事件
   void _handleServiceReady(String params) {
     try {
@@ -349,6 +559,14 @@ class _MiniAppPageState extends State<MiniAppPage> {
           _appConfig = config;
           final root = config['root']?.toString() ?? '';
           _rootPage = root;
+
+          // 解析所有页面列表
+          if (config['pages'] is List) {
+            _allPages.clear();
+            for (var p in config['pages']) {
+              _allPages.add(p.toString());
+            }
+          }
 
           // 解析 TabBar 配置
           if (config['tabBar'] is Map<String, dynamic>) {
@@ -370,7 +588,9 @@ class _MiniAppPageState extends State<MiniAppPage> {
                 _initializedTabViewIds.add(viewId);
               }
             }
+            _nextViewId = _tabViewIds.length + 1;
           }
+
 
           // 如果没有 TabBar，或者首页不在 TabBar 里（理论上不该发生）
           if (_tabViewIds.isEmpty) {
@@ -379,6 +599,7 @@ class _MiniAppPageState extends State<MiniAppPage> {
             _viewIdToOpenType[1] = 'appLaunch';
             _pageKeys[1] = GlobalKey<MiniAppPageViewState>();
             _initializedTabViewIds.add(1);
+            _nextViewId = 2;
           }
 
           _isServiceReady = true;
@@ -407,22 +628,27 @@ class _MiniAppPageState extends State<MiniAppPage> {
         title: _navBarTitle,
         backgroundColor: _navBarBgColor,
         textColor: _navBarTextColor,
+        showBack: _navigationStack.isNotEmpty,
+        onBack: () => _handleNavigateBack('{"delta":1}', null, null),
         onClose: () => Navigator.pop(context),
       ),
       body: SafeArea(
         top: false, // AppBar already handles top safe area usually
         child: Stack(
           children: [
-            // 1. 逻辑层 (后台运行)
+            // 1. 逻辑层 (后台运行) - 使用 Offstage 彻底避免其参与 UI 渲染或干扰手势拦截
             if (_sourcePath != null)
-              MiniAppService(
-                key: _serviceKey,
-                appId: widget.appId,
-                sourcePath: _sourcePath!,
-                onPublish: _handleServicePublish,
-                onInvoke:
-                    (event, params, callbackId) =>
-                        _handleInvoke(event, params, callbackId),
+              Offstage(
+                offstage: true,
+                child: MiniAppService(
+                  key: _serviceKey,
+                  appId: widget.appId,
+                  sourcePath: _sourcePath!,
+                  onPublish: _handleServicePublish,
+                  onInvoke:
+                      (event, params, callbackId) =>
+                          _handleInvoke(event, params, callbackId),
+                ),
               ),
 
             Column(
@@ -431,39 +657,54 @@ class _MiniAppPageState extends State<MiniAppPage> {
                     _tabBarConfig!['position'] == 'top')
                   _buildTopTabBar(),
                 Expanded(
-                  child:
-                      _appConfig != null && _sourcePath != null
-                          ? IndexedStack(
-                            index: _currentTabIndex,
-                            children:
-                                (_tabViewIds.isNotEmpty ? _tabViewIds : [1])
-                                    .map((id) {
-                                      if (!_initializedTabViewIds.contains(
-                                        id,
-                                      )) {
-                                        return const SizedBox.shrink();
-                                      }
-                                      return MiniAppPageView(
-                                        key: _pageKeys[id],
-                                        appId: widget.appId,
-                                        viewId: id,
-                                        path: _viewIdToPath[id] ?? '',
-                                        sourcePath: _sourcePath!,
-                                        onPublish: _handlePagePublish,
-                                        onInvoke:
-                                            (event, params, callbackId) =>
-                                                _handleInvoke(
-                                                  event,
-                                                  params,
-                                                  callbackId,
-                                                  fromViewId: id,
-                                                ),
-                                        onReady: () => _onPageReady(id),
-                                      );
-                                    })
-                                    .toList(),
-                          )
-                          : const SizedBox.shrink(),
+                  child: _appConfig == null || _sourcePath == null
+                      ? const SizedBox.shrink()
+                      : Stack(
+                          children: [
+                            // 2.1 Tab 页面 (IndexedStack)
+                            Positioned.fill(
+                              child: IndexedStack(
+                                index: _currentTabIndex,
+                                children:
+                                    (_tabViewIds.isNotEmpty ? _tabViewIds : [1])
+                                        .map((id) {
+                                if (!_initializedTabViewIds.contains(id)) {
+                                  return const SizedBox.shrink();
+                                }
+                                return MiniAppPageView(
+                                  key: _pageKeys[id],
+                                  appId: widget.appId,
+                                  viewId: id,
+                                  path: _viewIdToPath[id] ?? '',
+                                  sourcePath: _sourcePath!,
+                                  onPublish: _handlePagePublish,
+                                  onInvoke: (event, params, callbackId) =>
+                                      _handleInvoke(event, params, callbackId,
+                                          fromViewId: id),
+                                  onReady: () => _onPageReady(id),
+                                );
+                              }).toList(),
+                              ),
+                            ),
+ // 2.2 非 Tab 页面栈 (覆盖在 IndexedStack 之上)
+                            ..._navigationStack.map((id) {
+                              return Positioned.fill(
+                                child: MiniAppPageView(
+                                  key: _pageKeys[id],
+                                  appId: widget.appId,
+                                  viewId: id,
+                                  path: _viewIdToPath[id] ?? '',
+                                  sourcePath: _sourcePath!,
+                                  onPublish: _handlePagePublish,
+                                  onInvoke: (event, params, callbackId) =>
+                                      _handleInvoke(event, params, callbackId,
+                                          fromViewId: id),
+                                  onReady: () => _onPageReady(id),
+                                ),
+                              );
+                            }),
+                          ],
+                        ),
                 ),
               ],
             ),
@@ -504,11 +745,18 @@ class _MiniAppPageState extends State<MiniAppPage> {
         _initializedTabViewIds.add(nextViewId);
 
         _serviceKey.currentState?.onAppRoute('switchTab', pagePath, nextViewId);
+        if (_readyViewIds.contains(nextViewId)) {
+          _serviceKey.currentState
+              ?.onAppRouteDone('switchTab', pagePath, nextViewId);
+        }
       });
     }
   }
 
   Widget? _buildTabBar() {
+    // 如果当前有非 Tab 页面在栈顶，隐藏底栏
+    if (_navigationStack.isNotEmpty) return null;
+
     if (_tabBarConfig == null) return null;
     final String position = _tabBarConfig!['position']?.toString() ?? 'bottom';
     if (position == 'top') return null;
@@ -703,6 +951,8 @@ class MiniAppCapsuleAppBar extends StatelessWidget
   final String title;
   final String backgroundColor;
   final String textColor;
+  final bool showBack;
+  final VoidCallback? onBack;
   final VoidCallback? onClose;
 
   const MiniAppCapsuleAppBar({
@@ -710,6 +960,8 @@ class MiniAppCapsuleAppBar extends StatelessWidget
     this.title = '',
     this.backgroundColor = '#F7F7F7',
     this.textColor = 'black',
+    this.showBack = false,
+    this.onBack,
     this.onClose,
   });
 
@@ -730,6 +982,12 @@ class MiniAppCapsuleAppBar extends StatelessWidget
       elevation: 0,
       toolbarHeight: 56,
       automaticallyImplyLeading: false,
+      leading: showBack
+          ? IconButton(
+              icon: Icon(Icons.arrow_back_ios_new, color: contentColor, size: 20),
+              onPressed: onBack,
+            )
+          : null,
       centerTitle: true,
       title: Text(
         title,
@@ -766,11 +1024,10 @@ class MiniAppCapsuleAppBar extends StatelessWidget
                   ),
                 ),
               ),
-              const SizedBox(width: 14),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Container(
                 width: 0.5,
-                height: 18,
+                height: 16,
                 color: contentColor.withAlpha(51),
               ),
               const SizedBox(width: 12),

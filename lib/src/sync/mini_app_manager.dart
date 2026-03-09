@@ -104,7 +104,22 @@ class MiniAppManager {
         return false;
       }
 
-      // 4. 校验：检查 service.html（小程序核心入口文件）
+      // 4. 核心：通过符号链接（Symlink）让小程序能访问到框架资源，
+      // 这样既不需要进行物理镜像拷贝，也不需要修改 HTML 源码（保持相对路径有效）。
+      final frameworkLink = Link(p.join(outputPath, 'framework'));
+      final frameworkPageLink = Link(p.join(outputPath, 'page', 'framework'));
+      
+      final frameworkSrcDir = await StorageUtil.getFrameworkDir();
+      if (frameworkSrcDir.existsSync()) {
+        // 如果已存在则先删除，确保重新同步时路径正确
+        if (await frameworkLink.exists()) await frameworkLink.delete();
+        if (await frameworkPageLink.exists()) await frameworkPageLink.delete();
+        
+        await frameworkLink.create(frameworkSrcDir.path);
+        await frameworkPageLink.create(frameworkSrcDir.path);
+      }
+
+      // 5. 校验：检查 service.html（小程序核心入口文件）
       final serviceHtml = File(p.join(outputPath, 'service.html'));
       return await serviceHtml.exists();
     } catch (e) {
@@ -113,3 +128,4 @@ class MiniAppManager {
     }
   }
 }
+
