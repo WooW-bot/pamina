@@ -1,6 +1,6 @@
 {
-    "name": "mini_app_flutter_example",
-    "short_name": "mini_app_flutter_example",
+    "name": "微信小程序Demo",
+    "short_name": "微信小程序Demo",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

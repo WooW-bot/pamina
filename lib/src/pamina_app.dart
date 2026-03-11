@@ -2,6 +2,11 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:pamina/src/widgets/pamina_capsule.dart';
+import 'package:pamina/src/widgets/pamina_custom_modal.dart';
+import 'package:pamina/src/widgets/pamina_scanner.dart';
+import 'package:pamina/src/widgets/pamina_splash_screen.dart';
+import 'package:pamina/src/widgets/pamina_toast.dart';
 import 'sync/pamina_manager.dart';
 import 'utils/storage_util.dart';
 import 'pamina_service.dart';
@@ -14,7 +19,6 @@ import 'package:path/path.dart' as p;
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-import 'widgets/pamina_ui_widgets.dart';
 
 /// Pamina 容器 (App)
 ///
@@ -106,7 +110,7 @@ class _PaminaAppState extends State<PaminaApp> {
     // 1. 启动时先清理内部资源目录，保持沙箱整洁
     // 先执行清理，再执行同步，避免两个任务同时操作 source 目录导致 OS Error 39 (Directory not empty)
     await StorageUtil.clearMiniAppInternalResourceDir(widget.appId);
-    
+
     // 2. 然后再执行小程序资源同步
     _syncMiniApp();
   }
@@ -290,7 +294,10 @@ class _PaminaAppState extends State<PaminaApp> {
         _readyViewIds.contains(viewId) &&
         _viewIdToOpenType[viewId] == 'appLaunch') {
       final path = _viewIdToPath[viewId] ?? '';
-      PaminaLog.i('Triggering $viewId appLaunch (path: $path)', tag: 'PaminaApp');
+      PaminaLog.i(
+        'Triggering $viewId appLaunch (path: $path)',
+        tag: 'PaminaApp',
+      );
 
       // 标记为已启动，防止重复进入此逻辑
       _viewIdToOpenType[viewId] = 'navigating';
@@ -306,7 +313,10 @@ class _PaminaAppState extends State<PaminaApp> {
     String? callbackId, {
     int? fromViewId,
   }) {
-    PaminaLog.i('API Invoke: $event (callbackId: $callbackId)', tag: 'PaminaApp');
+    PaminaLog.i(
+      'API Invoke: $event (callbackId: $callbackId)',
+      tag: 'PaminaApp',
+    );
 
     switch (event) {
       case 'initReady':
@@ -318,17 +328,22 @@ class _PaminaAppState extends State<PaminaApp> {
         break;
       case 'setNavigationBarTitle':
         final title = json.decode(params)['title']?.toString() ?? '';
-        _pageKeys[fromViewId ?? _activePageId]?.currentState?.updateNavigationBar(title: title);
+        _pageKeys[fromViewId ?? _activePageId]?.currentState
+            ?.updateNavigationBar(title: title);
         _handleInvokeCallback(event, {}, callbackId, fromViewId: fromViewId);
         break;
       case 'setNavigationBarColor':
         final p = json.decode(params);
         final bgColor = p['backgroundColor']?.toString();
         final textColor = p['frontColor']?.toString();
-        _pageKeys[fromViewId ?? _activePageId]?.currentState?.updateNavigationBar(
-          backgroundColor: bgColor,
-          textColor: textColor != null ? (textColor.contains('ffffff') ? 'white' : 'black') : null,
-        );
+        _pageKeys[fromViewId ?? _activePageId]?.currentState
+            ?.updateNavigationBar(
+              backgroundColor: bgColor,
+              textColor:
+                  textColor != null
+                      ? (textColor.contains('ffffff') ? 'white' : 'black')
+                      : null,
+            );
         _handleInvokeCallback(event, {}, callbackId, fromViewId: fromViewId);
         break;
       case 'navigateTo':
@@ -347,11 +362,13 @@ class _PaminaAppState extends State<PaminaApp> {
         _handleOpenLink(params, callbackId, fromViewId);
         break;
       case 'showNavigationBarLoading':
-        _pageKeys[fromViewId ?? _activePageId]?.currentState?.updateNavigationBar(isLoading: true);
+        _pageKeys[fromViewId ?? _activePageId]?.currentState
+            ?.updateNavigationBar(isLoading: true);
         _handleInvokeCallback(event, {}, callbackId, fromViewId: fromViewId);
         break;
       case 'hideNavigationBarLoading':
-        _pageKeys[fromViewId ?? _activePageId]?.currentState?.updateNavigationBar(isLoading: false);
+        _pageKeys[fromViewId ?? _activePageId]?.currentState
+            ?.updateNavigationBar(isLoading: false);
         _handleInvokeCallback(event, {}, callbackId, fromViewId: fromViewId);
         break;
       case 'showToast':
@@ -364,14 +381,19 @@ class _PaminaAppState extends State<PaminaApp> {
         _handleShowLoading(params, callbackId, fromViewId);
         break;
       case 'hideLoading':
-        _handleHideToast(callbackId, fromViewId); // hideLoading typically uses hideToast logic
+        _handleHideToast(
+          callbackId,
+          fromViewId,
+        ); // hideLoading typically uses hideToast logic
         break;
       case 'startPullDownRefresh':
-        _pageKeys[fromViewId ?? _activePageId]?.currentState?.startPullDownRefresh();
+        _pageKeys[fromViewId ?? _activePageId]?.currentState
+            ?.startPullDownRefresh();
         _handleInvokeCallback(event, {}, callbackId, fromViewId: fromViewId);
         break;
       case 'stopPullDownRefresh':
-        _pageKeys[fromViewId ?? _activePageId]?.currentState?.stopPullDownRefresh();
+        _pageKeys[fromViewId ?? _activePageId]?.currentState
+            ?.stopPullDownRefresh();
         _handleInvokeCallback(event, {}, callbackId, fromViewId: fromViewId);
         break;
       case 'showActionSheet':
@@ -410,27 +432,51 @@ class _PaminaAppState extends State<PaminaApp> {
       case 'setStorage':
       case 'setStorageAsync':
       case 'setStorageSync':
-        _handleSetStorage(params, callbackId, fromViewId, isSync: event.endsWith('Sync'));
+        _handleSetStorage(
+          params,
+          callbackId,
+          fromViewId,
+          isSync: event.endsWith('Sync'),
+        );
         break;
       case 'getStorage':
       case 'getStorageAsync':
       case 'getStorageSync':
-        _handleGetStorage(params, callbackId, fromViewId, isSync: event.endsWith('Sync'));
+        _handleGetStorage(
+          params,
+          callbackId,
+          fromViewId,
+          isSync: event.endsWith('Sync'),
+        );
         break;
       case 'removeStorage':
       case 'removeStorageAsync':
       case 'removeStorageSync':
-        _handleRemoveStorage(params, callbackId, fromViewId, isSync: event.endsWith('Sync'));
+        _handleRemoveStorage(
+          params,
+          callbackId,
+          fromViewId,
+          isSync: event.endsWith('Sync'),
+        );
         break;
       case 'clearStorage':
       case 'clearStorageAsync':
       case 'clearStorageSync':
-        _handleClearStorage(params, callbackId, fromViewId, isSync: event.endsWith('Sync'));
+        _handleClearStorage(
+          params,
+          callbackId,
+          fromViewId,
+          isSync: event.endsWith('Sync'),
+        );
         break;
       case 'getStorageInfo':
       case 'getStorageInfoAsync':
       case 'getStorageInfoSync':
-        _handleGetStorageInfo(callbackId, fromViewId, isSync: event.endsWith('Sync'));
+        _handleGetStorageInfo(
+          callbackId,
+          fromViewId,
+          isSync: event.endsWith('Sync'),
+        );
         break;
       default:
         PaminaLog.w('Unhandled API: $event', tag: 'PaminaApp');
@@ -465,7 +511,10 @@ class _PaminaAppState extends State<PaminaApp> {
     final int duration = data['duration'] is int ? data['duration'] : 1500;
     final bool mask = data['mask'] == true;
 
-    PaminaLog.d('Showing toast: title=$title, icon=$icon, duration=$duration, mask=$mask', tag: 'PaminaApp');
+    PaminaLog.d(
+      'Showing toast: title=$title, icon=$icon, duration=$duration, mask=$mask',
+      tag: 'PaminaApp',
+    );
 
     _toastTimer?.cancel();
     setState(() {
@@ -508,7 +557,12 @@ class _PaminaAppState extends State<PaminaApp> {
       };
     });
 
-    _handleInvokeCallback('showLoading', {}, callbackId, fromViewId: fromViewId);
+    _handleInvokeCallback(
+      'showLoading',
+      {},
+      callbackId,
+      fromViewId: fromViewId,
+    );
   }
 
   void _handleHideToast(String? callbackId, int? fromViewId) {
@@ -520,15 +574,23 @@ class _PaminaAppState extends State<PaminaApp> {
     _handleInvokeCallback('hideToast', {}, callbackId, fromViewId: fromViewId);
   }
 
-  void _handleShowActionSheet(String params, String? callbackId, int? fromViewId) {
+  void _handleShowActionSheet(
+    String params,
+    String? callbackId,
+    int? fromViewId,
+  ) {
     try {
       final Map<String, dynamic> data = json.decode(params);
       final List itemList = data['itemList'] ?? [];
       final String itemColorStr = data['itemColor']?.toString() ?? '#000000';
       final String cancelText = data['cancelText']?.toString() ?? '取消';
-      final String cancelColorStr = data['cancelColor']?.toString() ?? '#000000';
+      final String cancelColorStr =
+          data['cancelColor']?.toString() ?? '#000000';
 
-      PaminaLog.i('Showing action sheet: ${itemList.length} items', tag: 'PaminaApp');
+      PaminaLog.i(
+        'Showing action sheet: ${itemList.length} items',
+        tag: 'PaminaApp',
+      );
 
       final Color itemColor = _parseColor(itemColorStr);
       final Color cancelColor = _parseColor(cancelColorStr);
@@ -555,7 +617,10 @@ class _PaminaAppState extends State<PaminaApp> {
                       children: [
                         InkWell(
                           onTap: () {
-                            PaminaLog.i('Action sheet item $index selected', tag: 'PaminaApp');
+                            PaminaLog.i(
+                              'Action sheet item $index selected',
+                              tag: 'PaminaApp',
+                            );
                             Navigator.pop(context, index);
                           },
                           child: Container(
@@ -600,14 +665,29 @@ class _PaminaAppState extends State<PaminaApp> {
         },
       ).then((index) {
         if (index != null && index is int) {
-          _handleInvokeCallback('showActionSheet', {'tapIndex': index}, callbackId, fromViewId: fromViewId);
+          _handleInvokeCallback(
+            'showActionSheet',
+            {'tapIndex': index},
+            callbackId,
+            fromViewId: fromViewId,
+          );
         } else {
-          _handleInvokeCallback('showActionSheet', {'errMsg': 'showActionSheet:fail cancel'}, callbackId, fromViewId: fromViewId);
+          _handleInvokeCallback(
+            'showActionSheet',
+            {'errMsg': 'showActionSheet:fail cancel'},
+            callbackId,
+            fromViewId: fromViewId,
+          );
         }
       });
     } catch (e) {
       PaminaLog.e('Handle showActionSheet error', error: e, tag: 'PaminaApp');
-      _handleInvokeCallback('showActionSheet', {'errMsg': 'showActionSheet:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'showActionSheet',
+        {'errMsg': 'showActionSheet:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
@@ -618,9 +698,11 @@ class _PaminaAppState extends State<PaminaApp> {
       final String content = data['content']?.toString() ?? '';
       final bool showCancel = data['showCancel'] ?? true;
       final String cancelText = data['cancelText']?.toString() ?? '取消';
-      final String cancelColorStr = data['cancelColor']?.toString() ?? '#000000';
+      final String cancelColorStr =
+          data['cancelColor']?.toString() ?? '#000000';
       final String confirmText = data['confirmText']?.toString() ?? '确定';
-      final String confirmColorStr = data['confirmColor']?.toString() ?? '#3CC51F';
+      final String confirmColorStr =
+          data['confirmColor']?.toString() ?? '#3CC51F';
 
       PaminaLog.i('Showing custom modal: $title', tag: 'PaminaApp');
 
@@ -653,7 +735,12 @@ class _PaminaAppState extends State<PaminaApp> {
       });
     } catch (e) {
       PaminaLog.e('Handle showModal error', error: e, tag: 'PaminaApp');
-      _handleInvokeCallback('showModal', {'errMsg': 'showModal:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'showModal',
+        {'errMsg': 'showModal:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
@@ -685,7 +772,8 @@ class _PaminaAppState extends State<PaminaApp> {
     String brand = 'Unknown';
     String model = 'Virtual Device';
     String system = 'Unknown';
-    String platform = Theme.of(context).platform == TargetPlatform.iOS ? 'ios' : 'android';
+    String platform =
+        Theme.of(context).platform == TargetPlatform.iOS ? 'ios' : 'android';
 
     try {
       if (Theme.of(context).platform == TargetPlatform.android) {
@@ -696,7 +784,7 @@ class _PaminaAppState extends State<PaminaApp> {
       } else if (Theme.of(context).platform == TargetPlatform.iOS) {
         final iosInfo = await deviceInfo.iosInfo;
         brand = 'Apple';
-        model = iosInfo.utsname.machine; 
+        model = iosInfo.utsname.machine;
         system = '${iosInfo.systemName} ${iosInfo.systemVersion}';
       }
     } catch (e) {
@@ -707,27 +795,27 @@ class _PaminaAppState extends State<PaminaApp> {
     final double pixelRatio = media.devicePixelRatio;
     final double screenWidth = media.size.width;
     final double screenHeight = media.size.height;
-    
+
     // Calculate windowHeight correctly
     // Available height = screenHeight - statusBar - navigationBar (56) - tabBar (if any)
     double windowHeight = screenHeight;
     windowHeight -= media.padding.top; // statusBar
     windowHeight -= 56; // navigationBar (PaminaPage AppBar height)
-    
+
     // TabBar height
     bool hasTabBar = _navigationStack.isEmpty && _tabBarConfig != null;
     if (hasTabBar) {
       // BottomNavigationBar height is roughly 56 + bottom padding
       windowHeight -= (56 + media.padding.bottom);
     } else {
-       // On sub-pages, we still might have bottom padding (home indicator)
-       windowHeight -= media.padding.bottom;
+      // On sub-pages, we still might have bottom padding (home indicator)
+      windowHeight -= media.padding.bottom;
     }
 
     final data = {
       'brand': brand,
       'model': model,
-      'pixelRatio': pixelRatio, 
+      'pixelRatio': pixelRatio,
       'screenWidth': screenWidth.round(),
       'screenHeight': screenHeight.round(),
       'windowWidth': screenWidth.round(),
@@ -745,8 +833,9 @@ class _PaminaAppState extends State<PaminaApp> {
         'right': (screenWidth - media.padding.right).round(),
         'bottom': (screenHeight - media.padding.bottom).round(),
         'width': screenWidth.round(),
-        'height': (screenHeight - media.padding.top - media.padding.bottom).round(),
-      }
+        'height':
+            (screenHeight - media.padding.top - media.padding.bottom).round(),
+      },
     };
 
     _handleInvokeCallback(
@@ -759,7 +848,8 @@ class _PaminaAppState extends State<PaminaApp> {
 
   void _handleGetNetworkType(String? callbackId, int? fromViewId) async {
     try {
-      final List<ConnectivityResult> connectivityResults = await Connectivity().checkConnectivity();
+      final List<ConnectivityResult> connectivityResults =
+          await Connectivity().checkConnectivity();
       String networkType = 'unknown';
 
       if (connectivityResults.contains(ConnectivityResult.none)) {
@@ -767,7 +857,7 @@ class _PaminaAppState extends State<PaminaApp> {
       } else if (connectivityResults.contains(ConnectivityResult.wifi)) {
         networkType = 'wifi';
       } else if (connectivityResults.contains(ConnectivityResult.mobile)) {
-        // Standard mini-app returns '2g', '3g', '4g', '5g'. 
+        // Standard mini-app returns '2g', '3g', '4g', '5g'.
         // connectivity_plus doesn't distinguish easily without more plugins.
         // Defaulting to '4g' or 'mobile' is common for simple bridges.
         networkType = 'mobile';
@@ -776,43 +866,86 @@ class _PaminaAppState extends State<PaminaApp> {
       }
 
       PaminaLog.i('Network type: $networkType', tag: 'PaminaApp');
-      _handleInvokeCallback('getNetworkType', {'networkType': networkType}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'getNetworkType',
+        {'networkType': networkType},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     } catch (e) {
       PaminaLog.e('Handle getNetworkType error', error: e, tag: 'PaminaApp');
-      _handleInvokeCallback('getNetworkType', {'errMsg': 'getNetworkType:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'getNetworkType',
+        {'errMsg': 'getNetworkType:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
-  void _handleMakePhoneCall(String params, String? callbackId, int? fromViewId) async {
+  void _handleMakePhoneCall(
+    String params,
+    String? callbackId,
+    int? fromViewId,
+  ) async {
     try {
       final Map<String, dynamic> data = json.decode(params);
       final String phoneNumber = data['phoneNumber']?.toString() ?? '';
-      
+
       if (phoneNumber.isEmpty) {
-        _handleInvokeCallback('makePhoneCall', {'errMsg': 'makePhoneCall:fail invalid phoneNumber'}, callbackId, fromViewId: fromViewId);
+        _handleInvokeCallback(
+          'makePhoneCall',
+          {'errMsg': 'makePhoneCall:fail invalid phoneNumber'},
+          callbackId,
+          fromViewId: fromViewId,
+        );
         return;
       }
 
       final Uri url = Uri.parse('tel:$phoneNumber');
       if (await canLaunchUrl(url)) {
         await launchUrl(url);
-        _handleInvokeCallback('makePhoneCall', {}, callbackId, fromViewId: fromViewId);
+        _handleInvokeCallback(
+          'makePhoneCall',
+          {},
+          callbackId,
+          fromViewId: fromViewId,
+        );
       } else {
-        _handleInvokeCallback('makePhoneCall', {'errMsg': 'makePhoneCall:fail cannot launch tel protocol'}, callbackId, fromViewId: fromViewId);
+        _handleInvokeCallback(
+          'makePhoneCall',
+          {'errMsg': 'makePhoneCall:fail cannot launch tel protocol'},
+          callbackId,
+          fromViewId: fromViewId,
+        );
       }
     } catch (e) {
       PaminaLog.e('Handle makePhoneCall error', error: e, tag: 'PaminaApp');
-      _handleInvokeCallback('makePhoneCall', {'errMsg': 'makePhoneCall:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'makePhoneCall',
+        {'errMsg': 'makePhoneCall:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
   void _handleReportIDKey(String params, String? callbackId, int? fromViewId) {
     // Stub for analytics: just log & return ok
     PaminaLog.d('Analytics reportIDKey: $params', tag: 'PaminaApp');
-    _handleInvokeCallback('reportIDKey', {}, callbackId, fromViewId: fromViewId);
+    _handleInvokeCallback(
+      'reportIDKey',
+      {},
+      callbackId,
+      fromViewId: fromViewId,
+    );
   }
 
-  void _handleScanCode(String params, String? callbackId, int? fromViewId) async {
+  void _handleScanCode(
+    String params,
+    String? callbackId,
+    int? fromViewId,
+  ) async {
     try {
       PaminaLog.i('Opening scanner...', tag: 'PaminaApp');
       final result = await Navigator.push<String>(
@@ -821,22 +954,41 @@ class _PaminaAppState extends State<PaminaApp> {
       );
 
       if (result != null) {
-        _handleInvokeCallback('scanCode', {
-          'result': result,
-          'scanType': 'QR_CODE', // Default for now
-          'charSet': 'UTF-8',
-          'errMsg': 'scanCode:ok'
-        }, callbackId, fromViewId: fromViewId);
+        _handleInvokeCallback(
+          'scanCode',
+          {
+            'result': result,
+            'scanType': 'QR_CODE', // Default for now
+            'charSet': 'UTF-8',
+            'errMsg': 'scanCode:ok',
+          },
+          callbackId,
+          fromViewId: fromViewId,
+        );
       } else {
-        _handleInvokeCallback('scanCode', {'errMsg': 'scanCode:fail cancel'}, callbackId, fromViewId: fromViewId);
+        _handleInvokeCallback(
+          'scanCode',
+          {'errMsg': 'scanCode:fail cancel'},
+          callbackId,
+          fromViewId: fromViewId,
+        );
       }
     } catch (e) {
       PaminaLog.e('Handle scanCode error', error: e, tag: 'PaminaApp');
-      _handleInvokeCallback('scanCode', {'errMsg': 'scanCode:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'scanCode',
+        {'errMsg': 'scanCode:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
-  void _handleRequest(String params, String? callbackId, int? fromViewId) async {
+  void _handleRequest(
+    String params,
+    String? callbackId,
+    int? fromViewId,
+  ) async {
     try {
       final Map<String, dynamic> data = json.decode(params);
       final String url = data['url']?.toString() ?? '';
@@ -856,17 +1008,29 @@ class _PaminaAppState extends State<PaminaApp> {
 
       switch (method) {
         case 'POST':
-          response = await http.post(uri, headers: headers, body: body is String ? body : json.encode(body));
+          response = await http.post(
+            uri,
+            headers: headers,
+            body: body is String ? body : json.encode(body),
+          );
           break;
         case 'PUT':
-          response = await http.put(uri, headers: headers, body: body is String ? body : json.encode(body));
+          response = await http.put(
+            uri,
+            headers: headers,
+            body: body is String ? body : json.encode(body),
+          );
           break;
         case 'DELETE':
-          response = await http.delete(uri, headers: headers, body: body is String ? body : json.encode(body));
+          response = await http.delete(
+            uri,
+            headers: headers,
+            body: body is String ? body : json.encode(body),
+          );
           break;
         case 'GET':
         default:
-          // For GET, standard wx.request might append data to query params, 
+          // For GET, standard wx.request might append data to query params,
           // but usually it's already in the URL provided.
           response = await http.get(uri, headers: headers);
           break;
@@ -883,32 +1047,49 @@ class _PaminaAppState extends State<PaminaApp> {
         }
       }
 
-      _handleInvokeCallback('request', {
-        'data': responseData,
-        'statusCode': response.statusCode,
-        'header': response.headers,
-      }, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'request',
+        {
+          'data': responseData,
+          'statusCode': response.statusCode,
+          'header': response.headers,
+        },
+        callbackId,
+        fromViewId: fromViewId,
+      );
     } catch (e) {
       PaminaLog.e('Handle request error', error: e, tag: 'PaminaApp');
-      _handleInvokeCallback('request', {'errMsg': 'request:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'request',
+        {'errMsg': 'request:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
-  void _handleChooseImage(String params, String? callbackId, int? fromViewId) async {
+  void _handleChooseImage(
+    String params,
+    String? callbackId,
+    int? fromViewId,
+  ) async {
     try {
       final Map<String, dynamic> data = json.decode(params);
       final int count = data['count'] is int ? data['count'] : 9;
       final List sourceType = data['sourceType'] ?? ['album', 'camera'];
 
-      PaminaLog.i('Choosing image: count=$count, sourceType=$sourceType', tag: 'PaminaApp');
+      PaminaLog.i(
+        'Choosing image: count=$count, sourceType=$sourceType',
+        tag: 'PaminaApp',
+      );
 
       final picker = ImagePicker();
       final List<XFile> files = [];
 
-      // If both album and camera are allowed, we might need to show an action sheet first 
+      // If both album and camera are allowed, we might need to show an action sheet first
       // or rely on image_picker's behavior if it supports multiple sources.
       // But standard image_picker requires picking one source.
-      
+
       String? selectedSource;
       if (sourceType.length > 1) {
         // Show action sheet to choose source
@@ -935,7 +1116,10 @@ class _PaminaAppState extends State<PaminaApp> {
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         alignment: Alignment.center,
-                        child: const Text('从相册选择', style: TextStyle(fontSize: 18)),
+                        child: const Text(
+                          '从相册选择',
+                          style: TextStyle(fontSize: 18),
+                        ),
                       ),
                     ),
                     const Divider(height: 0.5),
@@ -948,7 +1132,10 @@ class _PaminaAppState extends State<PaminaApp> {
                         child: const Text('拍照', style: TextStyle(fontSize: 18)),
                       ),
                     ),
-                    Container(height: 8, color: Colors.black12.withOpacity(0.05)),
+                    Container(
+                      height: 8,
+                      color: Colors.black12.withOpacity(0.05),
+                    ),
                     InkWell(
                       onTap: () => Navigator.pop(context),
                       child: Container(
@@ -965,10 +1152,17 @@ class _PaminaAppState extends State<PaminaApp> {
           },
         );
 
-        if (index == 0) selectedSource = 'album';
-        else if (index == 1) selectedSource = 'camera';
+        if (index == 0)
+          selectedSource = 'album';
+        else if (index == 1)
+          selectedSource = 'camera';
         else {
-          _handleInvokeCallback('chooseImage', {'errMsg': 'chooseImage:fail cancel'}, callbackId, fromViewId: fromViewId);
+          _handleInvokeCallback(
+            'chooseImage',
+            {'errMsg': 'chooseImage:fail cancel'},
+            callbackId,
+            fromViewId: fromViewId,
+          );
           return;
         }
       } else {
@@ -982,26 +1176,38 @@ class _PaminaAppState extends State<PaminaApp> {
         if (count > 1) {
           // 明确传递 limit 参数，有助于某些平台弹出支持多选的 UI
           files.addAll(await picker.pickMultiImage(limit: count));
-          PaminaLog.i('PickMultiImage returned ${files.length} files', tag: 'PaminaApp');
+          PaminaLog.i(
+            'PickMultiImage returned ${files.length} files',
+            tag: 'PaminaApp',
+          );
           // 兜底截断
           if (files.length > count) {
             files.removeRange(count, files.length);
           }
         } else {
-          final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+          final XFile? image = await picker.pickImage(
+            source: ImageSource.gallery,
+          );
           if (image != null) files.add(image);
         }
       }
 
       if (files.isEmpty) {
-        _handleInvokeCallback('chooseImage', {'errMsg': 'chooseImage:fail cancel'}, callbackId, fromViewId: fromViewId);
+        _handleInvokeCallback(
+          'chooseImage',
+          {'errMsg': 'chooseImage:fail cancel'},
+          callbackId,
+          fromViewId: fromViewId,
+        );
         return;
       }
 
       final List<String> tempFilePaths = [];
       final List<Map<String, dynamic>> tempFiles = [];
 
-      final resourceDir = await StorageUtil.getMiniAppInternalResourceDir(widget.appId);
+      final resourceDir = await StorageUtil.getMiniAppInternalResourceDir(
+        widget.appId,
+      );
       final random = DateTime.now().microsecondsSinceEpoch;
 
       for (int i = 0; i < files.length; i++) {
@@ -1017,35 +1223,43 @@ class _PaminaAppState extends State<PaminaApp> {
         final path = Uri.file(targetFile.path).toString();
         final size = await targetFile.length();
         tempFilePaths.add(path);
-        tempFiles.add({
-          'path': path,
-          'size': size,
-        });
+        tempFiles.add({'path': path, 'size': size});
       }
 
       PaminaLog.i('ChooseImage results: $tempFilePaths', tag: 'PaminaApp');
 
-      _handleInvokeCallback('chooseImage', {
-        'tempFilePaths': tempFilePaths,
-        'tempFiles': tempFiles,
-      }, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'chooseImage',
+        {'tempFilePaths': tempFilePaths, 'tempFiles': tempFiles},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     } catch (e) {
       PaminaLog.e('Handle chooseImage error', error: e, tag: 'PaminaApp');
-      _handleInvokeCallback('chooseImage', {'errMsg': 'chooseImage:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'chooseImage',
+        {'errMsg': 'chooseImage:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
-  void _handleUploadFile(String params, String? callbackId, int? fromViewId) async {
+  void _handleUploadFile(
+    String params,
+    String? callbackId,
+    int? fromViewId,
+  ) async {
     try {
       final Map<String, dynamic> data = json.decode(params);
       final String url = data['url']?.toString() ?? '';
       String filePath = data['filePath']?.toString() ?? '';
-      
+
       // 处理 file:// 协议头，http.MultipartFile.fromPath 需要原始路径
       if (filePath.startsWith('file://')) {
         filePath = filePath.replaceFirst('file://', '');
       }
-      
+
       final String name = data['name']?.toString() ?? 'file';
       final Map<String, String> headers = {};
       if (data['header'] is Map) {
@@ -1064,10 +1278,10 @@ class _PaminaAppState extends State<PaminaApp> {
 
       final uri = Uri.parse(url);
       final request = http.MultipartRequest('POST', uri);
-      
+
       request.headers.addAll(headers);
       request.fields.addAll(formData);
-      
+
       final file = await http.MultipartFile.fromPath(name, filePath);
       request.files.add(file);
 
@@ -1076,17 +1290,28 @@ class _PaminaAppState extends State<PaminaApp> {
 
       PaminaLog.i('Upload response: ${response.statusCode}', tag: 'PaminaApp');
 
-      _handleInvokeCallback('uploadFile', {
-        'data': response.body,
-        'statusCode': response.statusCode,
-      }, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'uploadFile',
+        {'data': response.body, 'statusCode': response.statusCode},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     } catch (e) {
       PaminaLog.e('Handle uploadFile error', error: e, tag: 'PaminaApp');
-      _handleInvokeCallback('uploadFile', {'errMsg': 'uploadFile:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'uploadFile',
+        {'errMsg': 'uploadFile:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
-  void _handleDownloadFile(String params, String? callbackId, int? fromViewId) async {
+  void _handleDownloadFile(
+    String params,
+    String? callbackId,
+    int? fromViewId,
+  ) async {
     try {
       final Map<String, dynamic> data = json.decode(params);
       final String url = data['url']?.toString() ?? '';
@@ -1101,32 +1326,56 @@ class _PaminaAppState extends State<PaminaApp> {
 
       final response = await http.get(Uri.parse(url), headers: headers);
       if (response.statusCode == 200) {
-        final resourceDir = await StorageUtil.getMiniAppInternalResourceDir(widget.appId);
+        final resourceDir = await StorageUtil.getMiniAppInternalResourceDir(
+          widget.appId,
+        );
         final random = DateTime.now().microsecondsSinceEpoch;
         final extension = p.extension(Uri.parse(url).path);
         final fileName = 'dl_${random}${extension}';
         final file = File(p.join(resourceDir.path, fileName));
         await file.writeAsBytes(response.bodyBytes);
 
-        PaminaLog.i('Downloaded file saved to internal resource: ${file.path}', tag: 'PaminaApp');
+        PaminaLog.i(
+          'Downloaded file saved to internal resource: ${file.path}',
+          tag: 'PaminaApp',
+        );
 
-        _handleInvokeCallback('downloadFile', {
-          'tempFilePath': Uri.file(file.path).toString(),
-          'statusCode': response.statusCode,
-        }, callbackId, fromViewId: fromViewId);
+        _handleInvokeCallback(
+          'downloadFile',
+          {
+            'tempFilePath': Uri.file(file.path).toString(),
+            'statusCode': response.statusCode,
+          },
+          callbackId,
+          fromViewId: fromViewId,
+        );
       } else {
-        _handleInvokeCallback('downloadFile', {
-          'errMsg': 'downloadFile:fail status code ${response.statusCode}',
-          'statusCode': response.statusCode,
-        }, callbackId, fromViewId: fromViewId);
+        _handleInvokeCallback(
+          'downloadFile',
+          {
+            'errMsg': 'downloadFile:fail status code ${response.statusCode}',
+            'statusCode': response.statusCode,
+          },
+          callbackId,
+          fromViewId: fromViewId,
+        );
       }
     } catch (e) {
       PaminaLog.e('Handle downloadFile error', error: e, tag: 'PaminaApp');
-      _handleInvokeCallback('downloadFile', {'errMsg': 'downloadFile:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'downloadFile',
+        {'errMsg': 'downloadFile:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
-  void _handleSaveFile(String params, String? callbackId, int? fromViewId) async {
+  void _handleSaveFile(
+    String params,
+    String? callbackId,
+    int? fromViewId,
+  ) async {
     try {
       final Map<String, dynamic> data = json.decode(params);
       String tempFilePath = data['tempFilePath']?.toString() ?? '';
@@ -1137,22 +1386,36 @@ class _PaminaAppState extends State<PaminaApp> {
 
       final file = File(tempFilePath);
       if (!file.existsSync()) {
-        _handleInvokeCallback('saveFile', {'errMsg': 'saveFile:fail file not found'}, callbackId, fromViewId: fromViewId);
+        _handleInvokeCallback(
+          'saveFile',
+          {'errMsg': 'saveFile:fail file not found'},
+          callbackId,
+          fromViewId: fromViewId,
+        );
         return;
       }
 
       final storeDir = await StorageUtil.getMiniAppStoreDir(widget.appId);
-      final fileName = 'store_${DateTime.now().microsecondsSinceEpoch}${p.extension(tempFilePath)}';
+      final fileName =
+          'store_${DateTime.now().microsecondsSinceEpoch}${p.extension(tempFilePath)}';
       final targetPath = p.join(storeDir.path, fileName);
 
       await file.copy(targetPath);
 
-      _handleInvokeCallback('saveFile', {
-        'savedFilePath': Uri.file(targetPath).toString(),
-      }, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'saveFile',
+        {'savedFilePath': Uri.file(targetPath).toString()},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     } catch (e) {
       PaminaLog.e('Handle saveFile error', error: e, tag: 'PaminaApp');
-      _handleInvokeCallback('saveFile', {'errMsg': 'saveFile:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'saveFile',
+        {'errMsg': 'saveFile:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
@@ -1178,7 +1441,12 @@ class _PaminaAppState extends State<PaminaApp> {
     }
   }
 
-  void _handleSetStorage(String params, String? callbackId, int? fromViewId, {bool isSync = false}) async {
+  void _handleSetStorage(
+    String params,
+    String? callbackId,
+    int? fromViewId, {
+    bool isSync = false,
+  }) async {
     final eventName = isSync ? 'setStorageSync' : 'setStorage';
     try {
       final Map<String, dynamic> data = json.decode(params);
@@ -1189,13 +1457,28 @@ class _PaminaAppState extends State<PaminaApp> {
       storage[key] = value;
       await _writeStorage(storage);
 
-      _handleInvokeCallback(eventName, {'errMsg': '$eventName:ok'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        eventName,
+        {'errMsg': '$eventName:ok'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     } catch (e) {
-      _handleInvokeCallback(eventName, {'errMsg': '$eventName:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        eventName,
+        {'errMsg': '$eventName:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
-  void _handleGetStorage(String params, String? callbackId, int? fromViewId, {bool isSync = false}) async {
+  void _handleGetStorage(
+    String params,
+    String? callbackId,
+    int? fromViewId, {
+    bool isSync = false,
+  }) async {
     final eventName = isSync ? 'getStorageSync' : 'getStorage';
     try {
       final Map<String, dynamic> data = json.decode(params);
@@ -1204,16 +1487,28 @@ class _PaminaAppState extends State<PaminaApp> {
       final storage = await _readStorage();
       final dynamic value = storage[key];
 
-      _handleInvokeCallback(eventName, {
-        'data': value,
-        'errMsg': '$eventName:ok'
-      }, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        eventName,
+        {'data': value, 'errMsg': '$eventName:ok'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     } catch (e) {
-      _handleInvokeCallback(eventName, {'errMsg': '$eventName:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        eventName,
+        {'errMsg': '$eventName:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
-  void _handleRemoveStorage(String params, String? callbackId, int? fromViewId, {bool isSync = false}) async {
+  void _handleRemoveStorage(
+    String params,
+    String? callbackId,
+    int? fromViewId, {
+    bool isSync = false,
+  }) async {
     final eventName = isSync ? 'removeStorageSync' : 'removeStorage';
     try {
       final Map<String, dynamic> data = json.decode(params);
@@ -1223,37 +1518,77 @@ class _PaminaAppState extends State<PaminaApp> {
       storage.remove(key);
       await _writeStorage(storage);
 
-      _handleInvokeCallback(eventName, {'errMsg': '$eventName:ok'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        eventName,
+        {'errMsg': '$eventName:ok'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     } catch (e) {
-      _handleInvokeCallback(eventName, {'errMsg': '$eventName:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        eventName,
+        {'errMsg': '$eventName:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
-  void _handleClearStorage(String params, String? callbackId, int? fromViewId, {bool isSync = false}) async {
+  void _handleClearStorage(
+    String params,
+    String? callbackId,
+    int? fromViewId, {
+    bool isSync = false,
+  }) async {
     final eventName = isSync ? 'clearStorageSync' : 'clearStorage';
     try {
       await _writeStorage({});
-      _handleInvokeCallback(eventName, {'errMsg': '$eventName:ok'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        eventName,
+        {'errMsg': '$eventName:ok'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     } catch (e) {
-      _handleInvokeCallback(eventName, {'errMsg': '$eventName:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        eventName,
+        {'errMsg': '$eventName:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
-  void _handleGetStorageInfo(String? callbackId, int? fromViewId, {bool isSync = false}) async {
+  void _handleGetStorageInfo(
+    String? callbackId,
+    int? fromViewId, {
+    bool isSync = false,
+  }) async {
     final eventName = isSync ? 'getStorageInfoSync' : 'getStorageInfo';
     try {
       final storage = await _readStorage();
       final keys = storage.keys.toList();
-      final currentSize = json.encode(storage).length; // Rough estimate in bytes
+      final currentSize =
+          json.encode(storage).length; // Rough estimate in bytes
 
-      _handleInvokeCallback(eventName, {
-        'keys': keys,
-        'currentSize': (currentSize / 1024).round(), // in KB
-        'limitSize': 10240, // 10MB limit
-        'errMsg': '$eventName:ok'
-      }, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        eventName,
+        {
+          'keys': keys,
+          'currentSize': (currentSize / 1024).round(), // in KB
+          'limitSize': 10240, // 10MB limit
+          'errMsg': '$eventName:ok',
+        },
+        callbackId,
+        fromViewId: fromViewId,
+      );
     } catch (e) {
-      _handleInvokeCallback(eventName, {'errMsg': '$eventName:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        eventName,
+        {'errMsg': '$eventName:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
@@ -1307,7 +1642,10 @@ class _PaminaAppState extends State<PaminaApp> {
     });
 
     if (wasSubPage) {
-      _navigatorKey.currentState?.pushReplacementNamed('/page', arguments: viewId);
+      _navigatorKey.currentState?.pushReplacementNamed(
+        '/page',
+        arguments: viewId,
+      );
     } else {
       _navigatorKey.currentState?.pushNamed('/page', arguments: viewId);
     }
@@ -1350,7 +1688,11 @@ class _PaminaAppState extends State<PaminaApp> {
     );
 
     // 发送路由事件给 Service (通知当前真正活跃的页面)
-    _serviceKey.currentState?.onAppRoute('navigateBack', nextPath, nextActiveId);
+    _serviceKey.currentState?.onAppRoute(
+      'navigateBack',
+      nextPath,
+      nextActiveId,
+    );
     _serviceKey.currentState?.onAppRouteDone(
       'navigateBack',
       nextPath,
@@ -1390,11 +1732,20 @@ class _PaminaAppState extends State<PaminaApp> {
     _handleInvokeCallback('switchTab', {}, callbackId, fromViewId: fromViewId);
   }
 
-  void _handleOpenLink(String params, String? callbackId, int? fromViewId) async {
+  void _handleOpenLink(
+    String params,
+    String? callbackId,
+    int? fromViewId,
+  ) async {
     final Map<String, dynamic> data = json.decode(params);
     final String urlString = data['url']?.toString() ?? '';
     if (urlString.isEmpty) {
-      _handleInvokeCallback('openLink', {'errMsg': 'openLink:fail url is empty'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'openLink',
+        {'errMsg': 'openLink:fail url is empty'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
       return;
     }
 
@@ -1402,12 +1753,27 @@ class _PaminaAppState extends State<PaminaApp> {
     try {
       if (await canLaunchUrl(url)) {
         await launchUrl(url, mode: LaunchMode.externalApplication);
-        _handleInvokeCallback('openLink', {}, callbackId, fromViewId: fromViewId);
+        _handleInvokeCallback(
+          'openLink',
+          {},
+          callbackId,
+          fromViewId: fromViewId,
+        );
       } else {
-        _handleInvokeCallback('openLink', {'errMsg': 'openLink:fail cannot launch $urlString'}, callbackId, fromViewId: fromViewId);
+        _handleInvokeCallback(
+          'openLink',
+          {'errMsg': 'openLink:fail cannot launch $urlString'},
+          callbackId,
+          fromViewId: fromViewId,
+        );
       }
     } catch (e) {
-      _handleInvokeCallback('openLink', {'errMsg': 'openLink:fail $e'}, callbackId, fromViewId: fromViewId);
+      _handleInvokeCallback(
+        'openLink',
+        {'errMsg': 'openLink:fail $e'},
+        callbackId,
+        fromViewId: fromViewId,
+      );
     }
   }
 
@@ -1487,7 +1853,6 @@ class _PaminaAppState extends State<PaminaApp> {
             _nextViewId = _tabViewIds.length + 1;
           }
 
-
           // 如果没有 TabBar，或者首页不在 TabBar 里（理论上不该发生）
           if (_tabViewIds.isEmpty) {
             _activePageId = 1;
@@ -1512,7 +1877,11 @@ class _PaminaAppState extends State<PaminaApp> {
         _tryTriggerAppLaunch(_activePageId);
       }
     } catch (e) {
-      PaminaLog.e('Parse serviceReady params error', error: e, tag: 'PaminaApp');
+      PaminaLog.e(
+        'Parse serviceReady params error',
+        error: e,
+        tag: 'PaminaApp',
+      );
     }
   }
 
@@ -1541,8 +1910,9 @@ class _PaminaAppState extends State<PaminaApp> {
                   appId: widget.appId,
                   sourcePath: _sourcePath!,
                   onPublish: _handleServicePublish,
-                  onInvoke: (event, params, callbackId) =>
-                      _handleInvoke(event, params, callbackId),
+                  onInvoke:
+                      (event, params, callbackId) =>
+                          _handleInvoke(event, params, callbackId),
                 ),
               ),
 
@@ -1552,29 +1922,31 @@ class _PaminaAppState extends State<PaminaApp> {
                     _tabBarConfig!['position'] == 'top')
                   _buildTopTabBar(),
                 Expanded(
-                  child: _appConfig == null || _sourcePath == null
-                      ? const SizedBox.shrink()
-                      : Navigator(
-                          key: _navigatorKey,
-                          initialRoute: '/',
-                          onGenerateRoute: (settings) {
-                            if (settings.name == '/') {
-                              return PageRouteBuilder(
-                                pageBuilder: (context, anim1, anim2) =>
-                                    _buildTabStack(),
+                  child:
+                      _appConfig == null || _sourcePath == null
+                          ? const SizedBox.shrink()
+                          : Navigator(
+                            key: _navigatorKey,
+                            initialRoute: '/',
+                            onGenerateRoute: (settings) {
+                              if (settings.name == '/') {
+                                return PageRouteBuilder(
+                                  pageBuilder:
+                                      (context, anim1, anim2) =>
+                                          _buildTabStack(),
+                                  settings: settings,
+                                );
+                              }
+
+                              final int? viewId = settings.arguments as int?;
+                              if (viewId == null) return null;
+
+                              return CupertinoPageRoute(
+                                builder: (context) => _buildSubPage(viewId),
                                 settings: settings,
                               );
-                            }
-
-                            final int? viewId = settings.arguments as int?;
-                            if (viewId == null) return null;
-
-                            return CupertinoPageRoute(
-                              builder: (context) => _buildSubPage(viewId),
-                              settings: settings,
-                            );
-                          },
-                        ),
+                            },
+                          ),
                 ),
               ],
             ),
@@ -1593,7 +1965,7 @@ class _PaminaAppState extends State<PaminaApp> {
               left: 0,
               right: 0,
               bottom: 0,
-                child: _buildTabBar() ?? const SizedBox.shrink(),
+              child: _buildTabBar() ?? const SizedBox.shrink(),
             ),
 
             // 全局弹窗
@@ -1613,8 +1985,8 @@ class _PaminaAppState extends State<PaminaApp> {
               child: PaminaCapsule(
                 onClose: () => Navigator.pop(context),
                 onMenu: () {
-                   PaminaLog.i('Global menu clicked', tag: 'PaminaApp');
-                   // TODO: Implement global menu (e.g., share, about, etc.)
+                  PaminaLog.i('Global menu clicked', tag: 'PaminaApp');
+                  // TODO: Implement global menu (e.g., share, about, etc.)
                 },
               ),
             ),
@@ -1627,31 +1999,33 @@ class _PaminaAppState extends State<PaminaApp> {
   Widget _buildTabStack() {
     return IndexedStack(
       index: _currentTabIndex,
-      children: (_tabViewIds.isNotEmpty ? _tabViewIds : [1]).map((id) {
-        if (!_initializedTabViewIds.contains(id)) {
-          return const SizedBox.shrink();
-        }
-        final path = _viewIdToPath[id] ?? '';
-        final config = _getPageConfig(path);
-        return PaminaPage(
-          key: _pageKeys[id],
-          appId: widget.appId,
-          viewId: id,
-          path: path,
-          sourcePath: _sourcePath!,
-          onPublish: _handlePagePublish,
-          onInvoke: (event, params, callbackId) =>
-              _handleInvoke(event, params, callbackId, fromViewId: id),
-          onReady: () => _onPageReady(id),
-          onClose: () => Navigator.pop(context),
-          onDispose: () => _onPageDispose(id),
-          initialTitle: config['title'],
-          initialBgColor: config['backgroundColor'],
-          initialTextColor: config['textColor'],
-          showBack: false,
-          enablePullDownRefresh: config['enablePullDownRefresh'] == 'true',
-        );
-      }).toList(),
+      children:
+          (_tabViewIds.isNotEmpty ? _tabViewIds : [1]).map((id) {
+            if (!_initializedTabViewIds.contains(id)) {
+              return const SizedBox.shrink();
+            }
+            final path = _viewIdToPath[id] ?? '';
+            final config = _getPageConfig(path);
+            return PaminaPage(
+              key: _pageKeys[id],
+              appId: widget.appId,
+              viewId: id,
+              path: path,
+              sourcePath: _sourcePath!,
+              onPublish: _handlePagePublish,
+              onInvoke:
+                  (event, params, callbackId) =>
+                      _handleInvoke(event, params, callbackId, fromViewId: id),
+              onReady: () => _onPageReady(id),
+              onClose: () => Navigator.pop(context),
+              onDispose: () => _onPageDispose(id),
+              initialTitle: config['title'],
+              initialBgColor: config['backgroundColor'],
+              initialTextColor: config['textColor'],
+              showBack: false,
+              enablePullDownRefresh: config['enablePullDownRefresh'] == 'true',
+            );
+          }).toList(),
     );
   }
 
@@ -1668,8 +2042,9 @@ class _PaminaAppState extends State<PaminaApp> {
       path: path,
       sourcePath: _sourcePath!,
       onPublish: _handlePagePublish,
-      onInvoke: (event, params, callbackId) =>
-          _handleInvoke(event, params, callbackId, fromViewId: viewId),
+      onInvoke:
+          (event, params, callbackId) =>
+              _handleInvoke(event, params, callbackId, fromViewId: viewId),
       onReady: () => _onPageReady(viewId),
       onClose: () => Navigator.pop(context),
       onDispose: () => _onPageDispose(viewId),
@@ -1700,8 +2075,11 @@ class _PaminaAppState extends State<PaminaApp> {
 
         _serviceKey.currentState?.onAppRoute('switchTab', pagePath, nextViewId);
         if (_readyViewIds.contains(nextViewId)) {
-          _serviceKey.currentState
-              ?.onAppRouteDone('switchTab', pagePath, nextViewId);
+          _serviceKey.currentState?.onAppRouteDone(
+            'switchTab',
+            pagePath,
+            nextViewId,
+          );
         }
       });
     }

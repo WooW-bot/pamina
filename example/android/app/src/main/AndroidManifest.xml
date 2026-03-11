@@ -2,7 +2,7 @@
     package="com.pamina.example">
     <uses-permission android:name="android.permission.CAMERA" />
     <application
-        android:label="pamina_example"
+        android:label="微信小程序Demo"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

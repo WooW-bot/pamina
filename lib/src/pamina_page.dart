@@ -4,11 +4,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:pamina/src/widgets/pamina_app_bar.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:path/path.dart' as p;
 import 'utils/pamina_log.dart';
-import 'widgets/pamina_ui_widgets.dart';
 
 
 /// Pamina 页面组件 (Page)
@@ -319,7 +319,7 @@ class PaminaPageState extends State<PaminaPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: PaminaCapsuleAppBar(
+      appBar: PaminaAppBar(
         title: _navBarTitle,
         backgroundColor: _navBarBgColor,
         textColor: _navBarTextColor,
